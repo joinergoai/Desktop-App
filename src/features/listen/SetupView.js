@@ -162,7 +162,7 @@ export class SetupView extends LitElement {
             <div class="input-group">
                 <input
                     type="password"
-                    placeholder="Enter your openai API Key"
+                    placeholder="Enter your Deepgram API Key"
                     .value=${localStorage.getItem('apiKey') || ''}
                     @input=${this.handleInput}
                 />

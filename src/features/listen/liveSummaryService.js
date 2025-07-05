@@ -3,7 +3,8 @@ const { BrowserWindow, ipcMain } = require('electron');
 const { spawn } = require('child_process');
 const { saveDebugAudio } = require('./audioUtils.js');
 const { getSystemPrompt } = require('../../common/prompts/promptBuilder.js');
-const { connectToOpenAiSession, createOpenAiGenerativeClient, getOpenAiGenerativeModel } = require('../../common/services/openAiClient.js');
+const { connectToDeepgramSession } = require('../../common/services/deepgramClient.js');
+const { createOpenAiGenerativeClient, getOpenAiGenerativeModel } = require('../../common/services/openAiClient.js');
 const sqliteClient = require('../../common/services/sqliteClient');
 const dataService = require('../../common/services/dataService');
 
@@ -14,17 +15,28 @@ function getApiKey() {
     const storedKey = getStoredApiKey();
 
     if (storedKey) {
-        console.log('[LiveSummaryService] Using stored API key');
+        console.log('[LiveSummaryService] Using stored API key for analysis');
         return storedKey;
     }
 
     const envKey = process.env.OPENAI_API_KEY;
     if (envKey) {
-        console.log('[LiveSummaryService] Using environment API key');
+        console.log('[LiveSummaryService] Using environment API key for analysis');
         return envKey;
     }
 
-    console.error('[LiveSummaryService] No API key found in storage or environment');
+    console.error('[LiveSummaryService] No API key found for analysis');
+    return null;
+}
+
+function getDeepgramApiKey() {
+    const envKey = process.env.DEEPGRAM_API_KEY;
+    if (envKey) {
+        console.log('[LiveSummaryService] Using Deepgram API key for transcription');
+        return envKey;
+    }
+
+    console.error('[LiveSummaryService] No Deepgram API key found in environment');
     return null;
 }
 
@@ -34,98 +46,9 @@ let isInitializingSession = false;
 
 let mySttSession = null;
 let theirSttSession = null;
-let myCurrentUtterance = '';
-let theirCurrentUtterance = '';
-
-let myLastPartialText = '';
-let theirLastPartialText = '';
-let myInactivityTimer = null;
-let theirInactivityTimer = null;
-const INACTIVITY_TIMEOUT = 3000;
 
 let previousAnalysisResult = null;
 let analysisHistory = [];
-
-// ---------------------------------------------------------------------------
-// 🎛️  Turn-completion debouncing
-// ---------------------------------------------------------------------------
-// Very aggressive VAD (e.g. 50 ms) tends to split one spoken sentence into
-// many "completed" events.  To avoid creating a separate chat bubble for each
-// of those micro-turns we debounce the *completed* events per speaker.  Any
-// completions that arrive within this window are concatenated and flushed as
-// **one** final turn.
-
-const COMPLETION_DEBOUNCE_MS = 2000;
-
-let myCompletionBuffer = '';
-let theirCompletionBuffer = '';
-let myCompletionTimer = null;
-let theirCompletionTimer = null;
-
-function flushMyCompletion() {
-    if (!myCompletionBuffer.trim()) return;
-
-    const finalText = myCompletionBuffer.trim();
-    // Save to DB & send to renderer as final
-    saveConversationTurn('Me', finalText);
-    sendToRenderer('stt-update', {
-        speaker: 'Me',
-        text: finalText,
-        isPartial: false,
-        isFinal: true,
-        timestamp: Date.now(),
-    });
-
-    myCompletionBuffer = '';
-    myCompletionTimer = null;
-    myCurrentUtterance = ''; // Reset utterance accumulator on flush
-    sendToRenderer('update-status', 'Listening...');
-}
-
-function flushTheirCompletion() {
-    if (!theirCompletionBuffer.trim()) return;
-
-    const finalText = theirCompletionBuffer.trim();
-    saveConversationTurn('Them', finalText);
-    sendToRenderer('stt-update', {
-        speaker: 'Them',
-        text: finalText,
-        isPartial: false,
-        isFinal: true,
-        timestamp: Date.now(),
-    });
-
-    theirCompletionBuffer = '';
-    theirCompletionTimer = null;
-    theirCurrentUtterance = ''; // Reset utterance accumulator on flush
-    sendToRenderer('update-status', 'Listening...');
-}
-
-function debounceMyCompletion(text) {
-    // 상대방이 말하고 있던 경우, 화자가 변경되었으므로 즉시 상대방의 말풍선을 완성합니다.
-    if (theirCompletionTimer) {
-        clearTimeout(theirCompletionTimer);
-        flushTheirCompletion();
-    }
-
-    myCompletionBuffer += (myCompletionBuffer ? ' ' : '') + text;
-
-    if (myCompletionTimer) clearTimeout(myCompletionTimer);
-    myCompletionTimer = setTimeout(flushMyCompletion, COMPLETION_DEBOUNCE_MS);
-}
-
-function debounceTheirCompletion(text) {
-    // 내가 말하고 있던 경우, 화자가 변경되었으므로 즉시 내 말풍선을 완성합니다.
-    if (myCompletionTimer) {
-        clearTimeout(myCompletionTimer);
-        flushMyCompletion();
-    }
-
-    theirCompletionBuffer += (theirCompletionBuffer ? ' ' : '') + text;
-
-    if (theirCompletionTimer) clearTimeout(theirCompletionTimer);
-    theirCompletionTimer = setTimeout(flushTheirCompletion, COMPLETION_DEBOUNCE_MS);
-}
 
 let systemAudioProc = null;
 
@@ -417,15 +340,6 @@ function stopAnalysisInterval() {
         clearInterval(analysisIntervalId);
         analysisIntervalId = null;
     }
-
-    if (myInactivityTimer) {
-        clearTimeout(myInactivityTimer);
-        myInactivityTimer = null;
-    }
-    if (theirInactivityTimer) {
-        clearTimeout(theirInactivityTimer);
-        theirInactivityTimer = null;
-    }
 }
 
 function sendToRenderer(channel, data) {
@@ -452,26 +366,10 @@ async function initializeNewSession() {
         console.log(`[DB] New session started in DB: ${currentSessionId}`);
 
         conversationHistory = [];
-        myCurrentUtterance = '';
-        theirCurrentUtterance = '';
 
         // 🔄 Reset analysis state so the new session starts fresh
         previousAnalysisResult = null;
         analysisHistory = [];
-
-        // sendToRenderer('update-outline', []);
-        // sendToRenderer('update-analysis-requests', []);
-
-        myLastPartialText = '';
-        theirLastPartialText = '';
-        if (myInactivityTimer) {
-            clearTimeout(myInactivityTimer);
-            myInactivityTimer = null;
-        }
-        if (theirInactivityTimer) {
-            clearTimeout(theirInactivityTimer);
-            theirInactivityTimer = null;
-        }
 
         console.log('New conversation session started:', currentSessionId);
         return true;
@@ -532,18 +430,15 @@ async function initializeLiveSummarySession(language = 'en') {
         return false;
     }
 
-    const loggedIn = isFirebaseLoggedIn();
-    const keyType = loggedIn ? 'vKey' : 'apiKey';
-
     isInitializingSession = true;
     sendToRenderer('session-initializing', true);
     sendToRenderer('update-status', 'Initializing sessions...');
 
-    // Merged block
-    const API_KEY = getApiKey();
-    if (!API_KEY) {
-        console.error('FATAL ERROR: API Key is not defined.');
-        sendToRenderer('update-status', 'API Key not configured.');
+    // Get Deepgram API key for transcription
+    const DEEPGRAM_KEY = getDeepgramApiKey();
+    if (!DEEPGRAM_KEY) {
+        console.error('FATAL ERROR: Deepgram API Key is not defined.');
+        sendToRenderer('update-status', 'Deepgram API Key not configured.');
         isInitializingSession = false;
         sendToRenderer('session-initializing', false);
         return false;
@@ -553,72 +448,65 @@ async function initializeLiveSummarySession(language = 'en') {
 
     try {
         const handleMyMessage = message => {
-            const type = message.type;
-            const text = message.transcript || message.delta || (message.alternatives && message.alternatives[0]?.transcript) || '';
-
-            if (type === 'conversation.item.input_audio_transcription.delta') {
-                if (myCompletionTimer) {
-                    clearTimeout(myCompletionTimer);
-                    myCompletionTimer = null;
-                }
-
-                myCurrentUtterance += text;
-
-                const continuousText = myCompletionBuffer + (myCompletionBuffer ? ' ' : '') + myCurrentUtterance;
-
-                if (text && !text.includes('vq_lbr_audio_')) {
-                    sendToRenderer('stt-update', {
-                        speaker: 'Me',
-                        text: continuousText,
-                        isPartial: true,
-                        isFinal: false,
-                        timestamp: Date.now(),
-                    });
-                }
-            } else if (type === 'conversation.item.input_audio_transcription.completed') {
-                if (text && text.trim()) {
-                    const finalUtteranceText = text.trim();
-                    myCurrentUtterance = '';
-
-                    debounceMyCompletion(finalUtteranceText);
-                }
-            } else if (message.error) {
-                console.error('[Me] STT Session Error:', message.error);
+            // Option 2: Optimized processing - direct path for Deepgram Results
+            if (message.type !== 'Results') return;
+            
+            const transcript = message.channel?.alternatives?.[0]?.transcript;
+            if (!transcript || transcript.includes('vq_lbr_audio_')) return;
+            
+            const speechFinal = message.speech_final;
+            const isFinal = message.is_final;
+            
+            if (speechFinal && transcript.trim()) {
+                // Final transcript - save immediately
+                saveConversationTurn('Me', transcript.trim());
+                sendToRenderer('stt-update', {
+                    speaker: 'Me',
+                    text: transcript.trim(),
+                    isPartial: false,
+                    isFinal: true,
+                    timestamp: Date.now(),
+                });
+            } else if (transcript.trim()) {
+                // Interim results - show immediately
+                sendToRenderer('stt-update', {
+                    speaker: 'Me',
+                    text: transcript.trim(),
+                    isPartial: !isFinal,
+                    isFinal: isFinal,
+                    timestamp: Date.now(),
+                });
             }
         };
 
         const handleTheirMessage = message => {
-            const type = message.type;
-            const text = message.transcript || message.delta || (message.alternatives && message.alternatives[0]?.transcript) || '';
-
-            if (type === 'conversation.item.input_audio_transcription.delta') {
-                if (theirCompletionTimer) {
-                    clearTimeout(theirCompletionTimer);
-                    theirCompletionTimer = null;
-                }
-
-                theirCurrentUtterance += text;
-
-                const continuousText = theirCompletionBuffer + (theirCompletionBuffer ? ' ' : '') + theirCurrentUtterance;
-
-                if (text && !text.includes('vq_lbr_audio_')) {
-                    sendToRenderer('stt-update', {
-                        speaker: 'Them',
-                        text: continuousText,
-                        isPartial: true,
-                        isFinal: false,
-                        timestamp: Date.now(),
-                    });
-                }
-            } else if (type === 'conversation.item.input_audio_transcription.completed') {
-                if (text && text.trim()) {
-                    const finalUtteranceText = text.trim();
-                    theirCurrentUtterance = '';
-
-                    debounceTheirCompletion(finalUtteranceText);
-                }
-            } else if (message.error) {
-                console.error('[Them] STT Session Error:', message.error);
+            if (message.type !== 'Results') return;
+            
+            const transcript = message.channel?.alternatives?.[0]?.transcript;
+            if (!transcript || transcript.includes('vq_lbr_audio_')) return;
+            
+            const speechFinal = message.speech_final;
+            const isFinal = message.is_final;
+            
+            if (speechFinal && transcript.trim()) {
+                // Final transcript - save immediately
+                saveConversationTurn('Them', transcript.trim());
+                sendToRenderer('stt-update', {
+                    speaker: 'Them',
+                    text: transcript.trim(),
+                    isPartial: false,
+                    isFinal: true,
+                    timestamp: Date.now(),
+                });
+            } else if (transcript.trim()) {
+                // Interim results - show immediately
+                sendToRenderer('stt-update', {
+                    speaker: 'Them',
+                    text: transcript.trim(),
+                    isPartial: !isFinal,
+                    isFinal: isFinal,
+                    timestamp: Date.now(),
+                });
             }
         };
 
@@ -639,10 +527,22 @@ async function initializeLiveSummarySession(language = 'en') {
             },
         };
 
-        [mySttSession, theirSttSession] = await Promise.all([
-            connectToOpenAiSession(API_KEY, mySttConfig, keyType),
-            connectToOpenAiSession(API_KEY, theirSttConfig, keyType),
-        ]);
+        mySttSession = connectToDeepgramSession(DEEPGRAM_KEY, mySttConfig);
+        theirSttSession = connectToDeepgramSession(DEEPGRAM_KEY, theirSttConfig);
+
+        // Wait for connections to be ready
+        let waitTime = 0;
+        const maxWait = 5000; // 5 seconds max
+        const checkInterval = 100; // Check every 100ms
+        
+        while ((!mySttSession.isReady() || !theirSttSession.isReady()) && waitTime < maxWait) {
+            await new Promise(resolve => setTimeout(resolve, checkInterval));
+            waitTime += checkInterval;
+        }
+        
+        if (!mySttSession.isReady() || !theirSttSession.isReady()) {
+            throw new Error('Deepgram connections failed to become ready within timeout');
+        }
 
         console.log('✅ Both STT sessions initialized successfully.');
         triggerAnalysisIfNeeded();
@@ -654,7 +554,7 @@ async function initializeLiveSummarySession(language = 'en') {
         sendToRenderer('update-status', 'Connected. Ready to listen.');
         return true;
     } catch (error) {
-        console.error('❌ Failed to initialize OpenAI STT sessions:', error);
+        console.error('❌ Failed to initialize Deepgram STT sessions:', error);
         isInitializingSession = false;
         sendToRenderer('session-initializing', false);
         sendToRenderer('update-status', 'Initialization failed.');
@@ -824,15 +724,14 @@ async function closeSession() {
 
         const closePromises = [];
         if (mySttSession) {
-            closePromises.push(mySttSession.close());
+            mySttSession.close();
             mySttSession = null;
         }
         if (theirSttSession) {
-            closePromises.push(theirSttSession.close());
+            theirSttSession.close();
             theirSttSession = null;
         }
 
-        await Promise.all(closePromises);
         console.log('All sessions closed.');
 
         currentSessionId = null;
