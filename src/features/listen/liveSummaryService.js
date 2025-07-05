@@ -304,7 +304,7 @@ function parseResponseText(responseText, previousResult) {
  * Triggers analysis when conversation history reaches 5 texts.
  */
 async function triggerAnalysisIfNeeded() {
-    if (conversationHistory.length >= 5 && conversationHistory.length % 5 === 0) {
+    if (conversationHistory.length >= 3 && conversationHistory.length % 3 === 0) {
         console.log(`🚀 Triggering analysis (non-blocking) - ${conversationHistory.length} conversation texts accumulated`);
 
         makeOutlineAndRequests(conversationHistory)
@@ -834,6 +834,30 @@ function setupLiveSummaryIpcHandlers() {
             return { success: true };
         } catch (error) {
             console.error('Error updating Google Search setting:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('force-analysis', async (event) => {
+        try {
+            if (conversationHistory.length === 0) {
+                console.log('⚠️ No conversation history available for analysis');
+                return { success: false, error: 'No conversation history available' };
+            }
+
+            console.log(`🔄 Manual analysis triggered with ${conversationHistory.length} conversation texts`);
+            
+            const data = await makeOutlineAndRequests(conversationHistory);
+            
+            if (data) {
+                console.log('📤 Sending manually triggered analysis data to renderer');
+                sendToRenderer('update-structured-data', data);
+                return { success: true };
+            } else {
+                return { success: false, error: 'No analysis data generated' };
+            }
+        } catch (error) {
+            console.error('❌ Error during manual analysis:', error);
             return { success: false, error: error.message };
         }
     });

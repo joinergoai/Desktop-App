@@ -1,4 +1,5 @@
 // renderer.js
+console.log(`[DEBUG] renderer.js loaded at ${new Date().toISOString()}`);
 const { ipcRenderer } = require('electron');
 
 let mediaStream = null;
@@ -914,7 +915,72 @@ function formatRealtimeConversationHistory() {
     return realtimeConversationHistory.slice(-30).join('\n');
 }
 
+async function getRagieContext(query) {
+    try {
+        // Get Ragie API key from environment
+        let ragieApiKey = null;
+        
+        if (window.require) {
+            const { ipcRenderer } = window.require('electron');
+            try {
+                ragieApiKey = await ipcRenderer.invoke('get-ragie-api-key');
+            } catch (error) {
+                console.warn('Failed to get Ragie API key via IPC:', error);
+            }
+        }
+
+        if (!ragieApiKey) {
+            ragieApiKey = process.env.RAGIE_API_KEY;
+        }
+
+        if (!ragieApiKey) {
+            console.warn('No Ragie API key found - skipping RAG context retrieval');
+            return '';
+        }
+
+        console.log('🔍 Making Ragie API call with query:', query.substring(0, 100) + '...');
+
+        const response = await fetch('https://api.ragie.ai/retrievals', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${ragieApiKey}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                query: query,
+                // filter: {
+                //     org_name: "Ergo"
+                // }
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`Ragie API error: ${response.status} ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        console.log('📊 Ragie API response received');
+
+        // Extract text from scored chunks
+        if (data.scored_chunks && data.scored_chunks.length > 0) {
+            const contextText = data.scored_chunks
+                .map(chunk => chunk.text)
+                .join('\n\n---\n\n');
+            
+            console.log(`📝 Extracted ${data.scored_chunks.length} chunks from Ragie`);
+            return contextText;
+        }
+
+        return '';
+    } catch (error) {
+        console.error('❌ Ragie API error:', error);
+        throw error;
+    }
+}
+
 async function sendMessage(userPrompt, options = {}) {
+    console.log('🚀 sendMessage function called with:', userPrompt);
+    
     if (!userPrompt || userPrompt.trim().length === 0) {
         console.warn('Cannot process empty message');
         return { success: false, error: 'Empty message' };
@@ -945,10 +1011,49 @@ async function sendMessage(userPrompt, options = {}) {
             console.warn('Failed to get screenshot:', error);
         }
 
+        // 2. Get RAG context from Ragie
+        let ragContext = '';
+        try {
+            console.log('🔍 Retrieving context from Ragie...');
+            const ragieResponse = await getRagieContext(userPrompt.trim());
+            if (ragieResponse && ragieResponse.length > 0) {
+                ragContext = ragieResponse;
+                console.log('✅ RAG context retrieved successfully');
+            } else {
+                console.log('ℹ️ No RAG context found for this query');
+            }
+        } catch (error) {
+            console.error('❌ Failed to retrieve RAG context:', error);
+            // Continue without RAG context
+        }
+
         const conversationHistory = formatRealtimeConversationHistory();
         console.log(`📝 Using conversation history: ${realtimeConversationHistory.length} texts`);
 
-        const systemPrompt = PICKLE_GLASS_SYSTEM_PROMPT.replace('{{CONVERSATION_HISTORY}}', conversationHistory);
+        // 3. Build enhanced system prompt with RAG context
+        let enhancedSystemPrompt = PICKLE_GLASS_SYSTEM_PROMPT.replace('{{CONVERSATION_HISTORY}}', conversationHistory);
+        
+        if (ragContext) {
+            enhancedSystemPrompt += `
+
+═══════════════════════════════════════════════════════════════════════════════
+🎯 CRITICAL CONTEXT FROM YOUR KNOWLEDGE BASE (RAGIE RAG SYSTEM) 🎯
+═══════════════════════════════════════════════════════════════════════════════
+
+The following information is DIRECTLY RELEVANT to the user's question and comes from their personal knowledge base. This information should be PRIORITIZED and INTEGRATED into your response:
+
+${ragContext}
+
+═══════════════════════════════════════════════════════════════════════════════
+END OF CRITICAL CONTEXT - Use this information to provide accurate, personalized responses
+═══════════════════════════════════════════════════════════════════════════════
+
+`;
+        }
+
+        const systemPrompt = enhancedSystemPrompt;
+
+        console.log(systemPrompt);
 
         let API_KEY = localStorage.getItem('openai_api_key');
 

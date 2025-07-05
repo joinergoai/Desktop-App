@@ -1932,6 +1932,16 @@ function setupApiKeyIPC() {
         return storedApiKey;
     });
 
+    ipcMain.handle('get-ragie-api-key', async () => {
+        const ragieApiKey = process.env.RAGIE_API_KEY;
+        if (!ragieApiKey) {
+            console.warn('[WindowManager] No RAGIE_API_KEY found in environment');
+            return null;
+        }
+        console.log('[WindowManager] Ragie API key retrieved from environment');
+        return ragieApiKey;
+    });
+
     console.log('[WindowManager] API key related IPC handlers registered (SQLite-backed)');
 }
 

@@ -331,7 +331,7 @@ export class AssistantView extends LitElement {
             flex: 1;
         }
 
-        insights-title {
+        .insights-title, insights-title {
             color: rgba(255, 255, 255, 0.8);
             font-size: 15px;
             font-weight: 500;
@@ -473,6 +473,55 @@ export class AssistantView extends LitElement {
             font-size: 10px;
             color: rgba(255, 255, 255, 0.7);
         }
+        
+        .insights-title-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin: 12px 0 8px 0;
+        }
+        
+        .insights-title {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 15px;
+            font-weight: 500;
+            font-family: 'Helvetica Neue', sans-serif;
+        }
+        
+        .refresh-button {
+            background: transparent;
+            color: rgba(255, 255, 255, 0.6);
+            border: none;
+            outline: none;
+            box-shadow: none;
+            padding: 4px;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px;
+            height: 24px;
+            transition: all 0.2s ease;
+        }
+        
+        .refresh-button:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: rgba(255, 255, 255, 0.9);
+        }
+        
+        .refresh-button:active {
+            transform: scale(0.95);
+        }
+        
+        .refresh-button.spinning svg {
+            animation: spin 0.6s linear;
+        }
+        
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
     `;
 
     static properties = {
@@ -488,6 +537,7 @@ export class AssistantView extends LitElement {
         captureStartTime: { type: Number },
         isSessionActive: { type: Boolean },
         hasCompletedRecording: { type: Boolean },
+        isRefreshing: { type: Boolean },
     };
 
     constructor() {
@@ -500,29 +550,29 @@ export class AssistantView extends LitElement {
             actions: [],
             followUps: [],
         };
-        this.isSessionActive = false;
-        this.hasCompletedRecording = false;
         this.sttMessages = [];
         this.viewMode = 'insights';
         this.isHovering = false;
         this.isAnimating = false;
+        this.copyState = 'idle';
         this.elapsedTime = '00:00';
         this.captureStartTime = null;
         this.timerInterval = null;
-        this.resizeObserver = null;
         this.adjustHeightThrottle = null;
-        this.isThrottled = false;
-        this._shouldScrollAfterUpdate = false;
-        this.messageIdCounter = 0;
-        this.copyState = 'idle';
         this.copyTimeout = null;
-
-        // 마크다운 라이브러리 초기화
-        this.marked = null;
-        this.hljs = null;
-        this.isLibrariesLoaded = false;
-        this.DOMPurify = null;
+        this.isThrottled = false;
+        this.messageIdCounter = 0;
+        this._shouldScrollAfterUpdate = false;
         this.isDOMPurifyLoaded = false;
+        this.isMarkedLoaded = false;
+        this.DOMPurify = null;
+        this.marked = null;
+        this.loadLibraries();
+        this.hljs = null;
+        this.isHljsLoaded = false;
+        this.isSessionActive = false;
+        this.hasCompletedRecording = false;
+        this.isRefreshing = false;
 
         // --- Debug Utilities ---
         this._debug = {
@@ -533,7 +583,7 @@ export class AssistantView extends LitElement {
         this.handleSttUpdate = this.handleSttUpdate.bind(this);
         this.adjustWindowHeight = this.adjustWindowHeight.bind(this);
 
-        this.loadLibraries();
+        this._startDebugStream();
     }
 
     // --- Debug Utilities ---
@@ -598,7 +648,7 @@ export class AssistantView extends LitElement {
                     xhtml: false,
                 });
 
-                this.isLibrariesLoaded = true;
+                this.isMarkedLoaded = true;
                 console.log('Markdown libraries loaded successfully');
             }
 
@@ -624,7 +674,7 @@ export class AssistantView extends LitElement {
     parseMarkdown(text) {
         if (!text) return '';
 
-        if (!this.isLibrariesLoaded || !this.marked) {
+        if (!this.isMarkedLoaded || !this.marked) {
             return text;
         }
 
@@ -641,7 +691,7 @@ export class AssistantView extends LitElement {
     }
 
     renderMarkdownContent() {
-        if (!this.isLibrariesLoaded || !this.marked) {
+        if (!this.isMarkedLoaded || !this.marked) {
             return;
         }
 
@@ -814,6 +864,33 @@ export class AssistantView extends LitElement {
             }, 1500);
         } catch (err) {
             console.error('Failed to copy:', err);
+        }
+    }
+
+    async handleRefresh() {
+        if (this.isRefreshing || !window.require) return;
+        
+        console.log('🔄 Manual refresh triggered');
+        this.isRefreshing = true;
+        this.requestUpdate();
+        
+        try {
+            const { ipcRenderer } = window.require('electron');
+            const result = await ipcRenderer.invoke('force-analysis');
+            
+            if (result.success) {
+                console.log('✅ Analysis refresh triggered successfully');
+            } else {
+                console.error('❌ Failed to trigger analysis:', result.error);
+            }
+        } catch (error) {
+            console.error('❌ Error triggering refresh:', error);
+        } finally {
+            // Reset animation after a delay
+            setTimeout(() => {
+                this.isRefreshing = false;
+                this.requestUpdate();
+            }, 600);
         }
     }
 
@@ -1067,7 +1144,18 @@ export class AssistantView extends LitElement {
                 </div>
 
                 <div class="insights-container ${this.viewMode !== 'insights' ? 'hidden' : ''}">
-                    <insights-title>Current Summary</insights-title>
+                    <div class="insights-title-container">
+                        <div class="insights-title">Current Summary</div>
+                        <button class="refresh-button ${this.isRefreshing ? 'spinning' : ''}" 
+                                @click=${this.handleRefresh}
+                                title="Refresh analysis">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M23 4v6h-6" />
+                                <path d="M1 20v-6h6" />
+                                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                            </svg>
+                        </button>
+                    </div>
                     ${data.summary.length > 0
                         ? data.summary
                               .slice(0, 5)
