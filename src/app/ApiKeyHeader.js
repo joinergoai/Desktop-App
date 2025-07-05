@@ -45,7 +45,7 @@ export class ApiKeyHeader extends LitElement {
 
         .container {
             width: 285px;
-            height: 220px;
+            height: 150px;
             padding: 18px 20px;
             background: rgba(0, 0, 0, 0.3);
             border-radius: 16px;
@@ -54,6 +54,7 @@ export class ApiKeyHeader extends LitElement {
             display: flex;
             flex-direction: column;
             align-items: center;
+            justify-content: center;
         }
 
         .container::after {
@@ -116,7 +117,7 @@ export class ApiKeyHeader extends LitElement {
             flex-direction: column;
             align-items: center;
             width: 100%;
-            margin-top: auto; /* 이 속성이 제목과 폼 사이의 공간을 만듭니다. */
+            margin-top: 20px;
         }
 
         .error-message {
@@ -191,6 +192,15 @@ export class ApiKeyHeader extends LitElement {
             opacity: 0.5;
             cursor: not-allowed;
         }
+        
+        .action-button.primary {
+            background: rgba(59, 130, 246, 0.8);
+            font-weight: 600;
+        }
+        
+        .action-button.primary:hover {
+            background: rgba(59, 130, 246, 1);
+        }
 
         .or-text {
             color: rgba(255, 255, 255, 0.5);
@@ -215,7 +225,7 @@ export class ApiKeyHeader extends LitElement {
         this.handleSubmit = this.handleSubmit.bind(this);
         this.handleInput = this.handleInput.bind(this);
         this.handleAnimationEnd = this.handleAnimationEnd.bind(this);
-        this.handleUsePicklesKey = this.handleUsePicklesKey.bind(this);
+        this.handleUseWorkOS = this.handleUseWorkOS.bind(this);
     }
 
     reset() {
@@ -402,13 +412,15 @@ export class ApiKeyHeader extends LitElement {
         this.classList.add('sliding-out');
     }
 
-    handleUsePicklesKey(e) {
+
+
+    handleUseWorkOS(e) {
         e.preventDefault();
         if (this.wasJustDragged) return;
 
-        console.log('Requesting Firebase authentication from main process...');
+        console.log('Requesting WorkOS authentication from main process...');
         if (window.require) {
-            window.require('electron').ipcRenderer.invoke('start-firebase-auth');
+            window.require('electron').ipcRenderer.invoke('start-workos-auth');
         }
     }
 
@@ -448,8 +460,6 @@ export class ApiKeyHeader extends LitElement {
     }
 
     render() {
-        const isButtonDisabled = this.isLoading || !this.apiKey || !this.apiKey.trim();
-
         return html`
             <div class="container" @mousedown=${this.handleMouseDown}>
                 <button class="close-button" @click=${this.handleClose} title="Close application">
@@ -457,32 +467,12 @@ export class ApiKeyHeader extends LitElement {
                         <path d="M1 1L9 9M9 1L1 9" stroke="currentColor" stroke-width="1.2" />
                     </svg>
                 </button>
-                <h1 class="title">Choose how to power your AI</h1>
+                <h1 class="title">Welcome to Ergo</h1>
 
                 <div class="form-content">
                     <div class="error-message">${this.errorMessage}</div>
-                    <input
-                        type="password"
-                        class="api-input"
-                        placeholder="Enter your OpenAI API key"
-                        .value=${this.apiKey || ''}
-                        @input=${this.handleInput}
-                        @keypress=${this.handleKeyPress}
-                        @paste=${this.handlePaste}
-                        @focus=${() => (this.errorMessage = '')}
-                        ?disabled=${this.isLoading}
-                        autocomplete="off"
-                        spellcheck="false"
-                        tabindex="0"
-                    />
-
-                    <button class="action-button" @click=${this.handleSubmit} ?disabled=${isButtonDisabled} tabindex="0">
-                        ${this.isLoading ? 'Validating...' : 'Confirm'}
-                    </button>
-
-                    <div class="or-text">or</div>
-
-                    <button class="action-button" @click=${this.handleUsePicklesKey}>Use Pickle's API Key</button>
+                    
+                    <button class="action-button primary" @click=${this.handleUseWorkOS}>Sign into Ergo</button>
                 </div>
             </div>
         `;

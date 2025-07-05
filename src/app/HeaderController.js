@@ -89,6 +89,21 @@ class HeaderTransitionManager {
                 }
             });
             
+            ipcRenderer.on('workos-auth-success', async (event, payload) => {
+                console.log('[HeaderController] WorkOS authentication successful:', payload);
+                this.hasApiKey = false; // WorkOS users don't need API keys
+                // WorkOS authenticated users get the full app experience
+                this.transitionToAppHeader(true);
+            });
+            
+            ipcRenderer.on('workos-auth-failed', (event, error) => {
+                console.error('[HeaderController] WorkOS authentication failed:', error);
+                if (this.apiKeyHeader) {
+                    this.apiKeyHeader.errorMessage = error.message || 'WorkOS authentication failed';
+                    this.apiKeyHeader.requestUpdate();
+                }
+            });
+            
             
             ipcRenderer.on('request-firebase-logout', async () => {
                 console.log('[HeaderController] Received request to sign out.');
@@ -249,16 +264,24 @@ class HeaderTransitionManager {
     }
 
     _resizeForApp() {
-            if (!window.require) return;
+            if (!window.require) return Promise.resolve();
             return window
                 .require('electron')
                 .ipcRenderer.invoke('resize-header-window', { width: 353, height: 60 })
                 .catch(() => {});
         }
+        
+        _resizeForApiKey() {
+            if (!window.require) return Promise.resolve();
+            return window
+                .require('electron')
+                .ipcRenderer.invoke('resize-header-window', { width: 285, height: 150 })
+                .catch(() => {});
+        }
 
         async transitionToApiKeyHeader() {
                 await window.require('electron')
-                    .ipcRenderer.invoke('resize-header-window', { width: 285, height: 220 });
+                    .ipcRenderer.invoke('resize-header-window', { width: 285, height: 150 });
             
                 if (this.currentHeaderType !== 'apikey') {
                     this.ensureHeader('apikey');

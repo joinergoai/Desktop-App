@@ -151,6 +151,41 @@ class DataService {
             return [];
         }
     }
+
+    async saveWorkOSTokens(tokens) {
+        if (!this.sqliteClient) {
+            throw new Error("SQLite client not available.");
+        }
+        try {
+            await this.initialize();
+            await this.sqliteClient.saveWorkOSTokens(this.currentUserId, tokens);
+            this.clearCache();
+            console.log('[DataService] WorkOS tokens saved successfully');
+            return { success: true };
+        } catch (error) {
+            console.error('[DataService] Failed to save WorkOS tokens:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    async getWorkOSTokens() {
+        const cacheKey = this.getCacheKey('workosTokens');
+        const cached = this.getFromCache(cacheKey);
+        if (cached) return cached;
+
+        if (!this.sqliteClient) return null;
+        try {
+            await this.initialize();
+            const tokens = await this.sqliteClient.getWorkOSTokens(this.currentUserId);
+            if (tokens) {
+                this.setCache(cacheKey, tokens);
+            }
+            return tokens;
+        } catch (error) {
+            console.error('[DataService] Failed to get WorkOS tokens:', error);
+            return null;
+        }
+    }
 }
 
 const dataService = new DataService();

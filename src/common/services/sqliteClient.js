@@ -43,7 +43,11 @@ class SQLiteClient {
                   display_name  TEXT NOT NULL,
                   email         TEXT NOT NULL,
                   created_at    INTEGER,
-                  api_key       TEXT
+                  api_key       TEXT,
+                  workos_access_token  TEXT,
+                  workos_refresh_token TEXT,
+                  workos_expires_at    INTEGER,
+                  workos_user_id       TEXT
                 );
 
                 CREATE TABLE IF NOT EXISTS sessions (
@@ -110,7 +114,7 @@ class SQLiteClient {
                     return reject(err);
                 }
                 console.log('All tables are ready.');
-                            this.initDefaultData().then(resolve).catch(reject);
+                this.initDefaultData().then(resolve).catch(reject);
             });
         });
     }
@@ -202,6 +206,46 @@ class SQLiteClient {
                     } else {
                         console.log(`SQLite: API key saved for user ${uid}.`);
                         resolve({ changes: this.changes });
+                    }
+                }
+            );
+        });
+    }
+
+    async saveWorkOSTokens(uid, tokens) {
+        return new Promise((resolve, reject) => {
+            const { access_token, refresh_token, expires_at, workos_user_id } = tokens;
+            this.db.run(
+                `UPDATE users SET 
+                    workos_access_token = ?, 
+                    workos_refresh_token = ?, 
+                    workos_expires_at = ?,
+                    workos_user_id = ?
+                WHERE uid = ?`,
+                [access_token, refresh_token, expires_at, workos_user_id, uid],
+                function(err) {
+                    if (err) {
+                        console.error('SQLite: Failed to save WorkOS tokens:', err);
+                        reject(err);
+                    } else {
+                        console.log(`SQLite: WorkOS tokens saved for user ${uid}.`);
+                        resolve({ changes: this.changes });
+                    }
+                }
+            );
+        });
+    }
+
+    async getWorkOSTokens(uid) {
+        return new Promise((resolve, reject) => {
+            this.db.get(
+                'SELECT workos_access_token, workos_refresh_token, workos_expires_at, workos_user_id FROM users WHERE uid = ?',
+                [uid],
+                (err, row) => {
+                    if (err) {
+                        reject(err);
+                    } else {
+                        resolve(row || null);
                     }
                 }
             );

@@ -1799,23 +1799,6 @@ function setupIpcHandlers(openaiSessionRef) {
 
     ipcMain.handle('firebase-logout', () => {
         console.log('[WindowManager] Received request to log out.');
-        // setApiKey(null)
-        //     .then(() => {
-        //         console.log('[WindowManager] API key cleared successfully after logout');
-        //         windowPool.forEach(win => {
-        //             if (win && !win.isDestroyed()) {
-        //                 win.webContents.send('api-key-removed');
-        //             }
-        //         });
-        //     })
-        //     .catch(err => {
-        //         console.error('[WindowManager] setApiKey error:', err);
-        //         windowPool.forEach(win => {
-        //             if (win && !win.isDestroyed()) {
-        //                 win.webContents.send('api-key-removed');
-        //             }
-        //         });
-        //     });
 
         const header = windowPool.get('header');
         if (header && !header.isDestroyed()) {

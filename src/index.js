@@ -180,6 +180,27 @@ function setupGeneralIpcHandlers() {
         return await dataService.getPresetTemplates();
     });
 
+    ipcMain.handle('get-workos-tokens', async () => {
+        try {
+            const tokens = await dataService.getWorkOSTokens();
+            return { success: true, tokens };
+        } catch (error) {
+            console.error('[IPC] Failed to get WorkOS tokens:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('check-workos-auth', async () => {
+        try {
+            const workosAuth = require('./common/services/workosAuth');
+            const isAuthenticated = await workosAuth.isAuthenticated();
+            return { isAuthenticated };
+        } catch (error) {
+            console.error('[IPC] Failed to check WorkOS auth:', error);
+            return { isAuthenticated: false };
+        }
+    });
+
     ipcMain.on('set-current-user', (event, uid) => {
         console.log(`[IPC] set-current-user: ${uid}`);
         dataService.setCurrentUser(uid);
@@ -193,6 +214,33 @@ function setupGeneralIpcHandlers() {
             return { success: true };
         } catch (error) {
             console.error('[Auth] Failed to open Firebase auth URL:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('start-workos-auth', async () => {
+        try {
+            // Check if environment variables are set
+            if (!process.env.WORKOS_CLIENT_ID) {
+                throw new Error('WORKOS_CLIENT_ID not configured');
+            }
+
+            // Generate a random state for security
+            const state = require('crypto').randomUUID();
+            
+            // Use User Management authorization endpoint for AuthKit
+            const authUrl = new URL('https://api.workos.com/user_management/authorize');
+            authUrl.searchParams.append('client_id', process.env.WORKOS_CLIENT_ID);
+            authUrl.searchParams.append('redirect_uri', 'pickleglass://workos-auth');
+            authUrl.searchParams.append('response_type', 'code');
+            authUrl.searchParams.append('provider', 'authkit'); // Use AuthKit hosted UI
+            authUrl.searchParams.append('state', state);
+            
+            console.log(`[WorkOS Auth] Opening auth URL in browser`);
+            await shell.openExternal(authUrl.toString());
+            return { success: true };
+        } catch (error) {
+            console.error('[WorkOS Auth] Failed to open auth URL:', error);
             return { success: false, error: error.message };
         }
     });
@@ -270,6 +318,9 @@ async function handleCustomUrl(url) {
             case 'login':
             case 'auth-success':
                 await handleFirebaseAuthCallback(params);
+                break;
+            case 'workos-auth':
+                await handleWorkOSAuthCallback(params);
                 break;
             case 'personalize':
                 handlePersonalizeFromUrl(params);
@@ -398,6 +449,146 @@ async function handleFirebaseAuthCallback(params) {
         const header = windowPool.get('header');
         if (header) {
             header.webContents.send('login-successful', { 
+                error: 'authentication_failed',
+                message: error.message 
+            });
+        }
+    }
+}
+
+async function handleWorkOSAuthCallback(params) {
+    const { code, state } = params;
+
+    if (!code) {
+        console.error('[WorkOS Auth] Authorization code missing');
+        const { windowPool } = require('./electron/windowManager');
+        const header = windowPool.get('header');
+        if (header) {
+            header.webContents.send('workos-auth-failed', { 
+                error: 'authorization_code_missing',
+                message: 'Authorization code not provided in deep link.'
+            });
+        }
+        return;
+    }
+
+    // Check if we've already processed this code
+    if (global.processedWorkOSCodes && global.processedWorkOSCodes.has(code)) {
+        console.log('[WorkOS Auth] Code already processed, skipping');
+        return;
+    }
+
+    // Mark this code as processed
+    if (!global.processedWorkOSCodes) {
+        global.processedWorkOSCodes = new Set();
+    }
+    global.processedWorkOSCodes.add(code);
+
+    try {
+        console.log('[WorkOS Auth] Exchanging authorization code for tokens...');
+        console.log('[WorkOS Auth] Code:', code.substring(0, 10) + '...');
+        console.log('[WorkOS Auth] Timestamp:', new Date().toISOString());
+        console.log('[WorkOS Auth] Using credentials:', {
+            hasApiKey: !!process.env.WORKOS_API_KEY,
+            hasClientId: !!process.env.WORKOS_CLIENT_ID,
+            clientId: process.env.WORKOS_CLIENT_ID,
+            apiKeyLength: process.env.WORKOS_API_KEY ? process.env.WORKOS_API_KEY.length : 0
+        });
+        
+        // Use the User Management authenticate endpoint for AuthKit
+        const tokenResponse = await fetch('https://api.workos.com/user_management/authenticate', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'User-Agent': 'PickleGlass/1.0'
+            },
+            body: JSON.stringify({
+                grant_type: 'authorization_code',
+                code: code,
+                client_id: process.env.WORKOS_CLIENT_ID,
+                client_secret: process.env.WORKOS_API_KEY // API key is used as client secret
+            })
+        });
+
+        const responseText = await tokenResponse.text();
+        let tokens;
+        
+        try {
+            tokens = JSON.parse(responseText);
+        } catch (e) {
+            console.error('[WorkOS Auth] Failed to parse response:', responseText);
+            throw new Error('Invalid response from WorkOS');
+        }
+        
+        if (!tokenResponse.ok) {
+            console.error('[WorkOS Auth] Token exchange failed:', {
+                status: tokenResponse.status,
+                error: tokens.error,
+                error_description: tokens.error_description,
+                response: tokens,
+                errors: tokens.errors ? JSON.stringify(tokens.errors, null, 2) : 'No errors array'
+            });
+            throw new Error(tokens.error_description || tokens.error || 'Failed to exchange tokens');
+        }
+
+        console.log('[WorkOS Auth] Authentication successful');
+
+        // The user_management/authenticate endpoint returns the user directly
+        const { user, access_token, refresh_token } = tokens;
+        
+        if (!user) {
+            throw new Error('No user data in authentication response');
+        }
+
+        console.log('[WorkOS Auth] User authenticated:', user.email);
+
+        // Create/update user in SQLite
+        const workosUser = {
+            uid: user.id,
+            display_name: `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email,
+            email: user.email
+        };
+
+        await dataService.findOrCreateUser(workosUser);
+        
+        // Store tokens with expiry
+        await dataService.saveWorkOSTokens({
+            access_token: access_token,
+            refresh_token: refresh_token,
+            expires_at: Date.now() + (3600 * 1000), // Default to 1 hour
+            workos_user_id: user.id
+        });
+
+        dataService.setCurrentUser(user.id);
+        console.log('[WorkOS Auth] User data synced with local DB.');
+
+        // Notify all windows
+        const { windowPool } = require('./electron/windowManager');
+        windowPool.forEach(win => {
+            if (win && !win.isDestroyed()) {
+                win.webContents.send('workos-auth-success', {
+                    user: workosUser,
+                    success: true
+                });
+                win.webContents.send('user-changed', workosUser);
+            }
+        });
+
+        const header = windowPool.get('header');
+        if (header) {
+            if (header.isMinimized()) header.restore();
+            header.focus();
+        }
+
+        console.log('[WorkOS Auth] Authentication completed successfully');
+
+    } catch (error) {
+        console.error('[WorkOS Auth] Error during authentication:', error);
+        
+        const { windowPool } = require('./electron/windowManager');
+        const header = windowPool.get('header');
+        if (header) {
+            header.webContents.send('workos-auth-failed', { 
                 error: 'authentication_failed',
                 message: error.message 
             });
