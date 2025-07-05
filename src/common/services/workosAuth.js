@@ -68,17 +68,16 @@ class WorkOSAuth {
         }
 
         try {
-            const response = await fetch('https://api.workos.com/user_management/authenticate', {
+            // Use your backend proxy for token refresh
+            const backendUrl = process.env.BACKEND_URL;
+            const response = await fetch(`${backendUrl}/api/desktop/auth/refresh`, {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json',
                     'User-Agent': 'PickleGlass/1.0'
                 },
                 body: JSON.stringify({
-                    grant_type: 'refresh_token',
-                    refresh_token: tokens.workos_refresh_token,
-                    client_id: process.env.WORKOS_CLIENT_ID,
-                    client_secret: process.env.WORKOS_API_KEY
+                    refresh_token: tokens.workos_refresh_token
                 })
             });
 
@@ -92,7 +91,7 @@ class WorkOSAuth {
             await dataService.saveWorkOSTokens({
                 access_token: data.access_token,
                 refresh_token: data.refresh_token || tokens.workos_refresh_token, // Some providers don't rotate refresh tokens
-                expires_at: Date.now() + (data.expires_in * 1000),
+                expires_at: Date.now() + ((data.expires_in || 3600) * 1000),
                 workos_user_id: tokens.workos_user_id
             });
 

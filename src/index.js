@@ -21,6 +21,7 @@ const { Deeplink } = require('electron-deeplink');
 const express = require('express');
 const fetch = require('node-fetch');
 const { autoUpdater } = require('electron-updater');
+const { env } = require('node:process');
 
 let WEB_PORT = 3000;
 
@@ -217,30 +218,29 @@ function setupGeneralIpcHandlers() {
             return { success: false, error: error.message };
         }
     });
-
+    
     ipcMain.handle('start-workos-auth', async () => {
         try {
-            // Check if environment variables are set
-            if (!process.env.WORKOS_CLIENT_ID) {
-                throw new Error('WORKOS_CLIENT_ID not configured');
-            }
-
-            // Generate a random state for security
-            const state = require('crypto').randomUUID();
+            // Get auth URL from your backend service
+            const backendUrl = process.env.BACKEND_URL;
+            const response = await fetch(`${backendUrl}/api/desktop/auth/init`);
             
-            // Use User Management authorization endpoint for AuthKit
-            const authUrl = new URL('https://api.workos.com/user_management/authorize');
-            authUrl.searchParams.append('client_id', process.env.WORKOS_CLIENT_ID);
-            authUrl.searchParams.append('redirect_uri', 'pickleglass://workos-auth');
-            authUrl.searchParams.append('response_type', 'code');
-            authUrl.searchParams.append('provider', 'authkit'); // Use AuthKit hosted UI
-            authUrl.searchParams.append('state', state);
+            if (!response.ok) {
+                const error = await response.text();
+                throw new Error(`Failed to get auth URL: ${error}`);
+            }
+            
+            const { authUrl, state } = await response.json();
+            
+            if (!authUrl) {
+                throw new Error('No auth URL received from backend');
+            }
             
             console.log(`[WorkOS Auth] Opening auth URL in browser`);
-            await shell.openExternal(authUrl.toString());
+            await shell.openExternal(authUrl);
             return { success: true };
         } catch (error) {
-            console.error('[WorkOS Auth] Failed to open auth URL:', error);
+            console.error('[WorkOS Auth] Failed to initiate auth:', error);
             return { success: false, error: error.message };
         }
     });
@@ -488,53 +488,39 @@ async function handleWorkOSAuthCallback(params) {
         console.log('[WorkOS Auth] Exchanging authorization code for tokens...');
         console.log('[WorkOS Auth] Code:', code.substring(0, 10) + '...');
         console.log('[WorkOS Auth] Timestamp:', new Date().toISOString());
-        console.log('[WorkOS Auth] Using credentials:', {
-            hasApiKey: !!process.env.WORKOS_API_KEY,
-            hasClientId: !!process.env.WORKOS_CLIENT_ID,
-            clientId: process.env.WORKOS_CLIENT_ID,
-            apiKeyLength: process.env.WORKOS_API_KEY ? process.env.WORKOS_API_KEY.length : 0
-        });
         
-        // Use the User Management authenticate endpoint for AuthKit
-        const tokenResponse = await fetch('https://api.workos.com/user_management/authenticate', {
+        // Exchange code through your backend proxy
+        const backendUrl = process.env.BACKEND_URL;
+        const response = await fetch(`${backendUrl}/api/desktop/auth/token`, {
             method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json',
-                'User-Agent': 'PickleGlass/1.0'
-            },
-            body: JSON.stringify({
-                grant_type: 'authorization_code',
-                code: code,
-                client_id: process.env.WORKOS_CLIENT_ID,
-                client_secret: process.env.WORKOS_API_KEY // API key is used as client secret
-            })
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code })
         });
 
-        const responseText = await tokenResponse.text();
-        let tokens;
+        const responseText = await response.text();
+        let data;
         
         try {
-            tokens = JSON.parse(responseText);
+            data = JSON.parse(responseText);
         } catch (e) {
             console.error('[WorkOS Auth] Failed to parse response:', responseText);
-            throw new Error('Invalid response from WorkOS');
+            throw new Error('Invalid response from auth service');
         }
         
-        if (!tokenResponse.ok) {
+        if (!response.ok) {
             console.error('[WorkOS Auth] Token exchange failed:', {
-                status: tokenResponse.status,
-                error: tokens.error,
-                error_description: tokens.error_description,
-                response: tokens,
-                errors: tokens.errors ? JSON.stringify(tokens.errors, null, 2) : 'No errors array'
+                status: response.status,
+                error: data.error,
+                error_description: data.error_description,
+                response: data
             });
-            throw new Error(tokens.error_description || tokens.error || 'Failed to exchange tokens');
+            throw new Error(data.error_description || data.error || 'Failed to exchange tokens');
         }
 
         console.log('[WorkOS Auth] Authentication successful');
 
-        // The user_management/authenticate endpoint returns the user directly
-        const { user, access_token, refresh_token } = tokens;
+        // Extract user and tokens from response
+        const { user, access_token, refresh_token, expires_in } = data;
         
         if (!user) {
             throw new Error('No user data in authentication response');
@@ -555,7 +541,7 @@ async function handleWorkOSAuthCallback(params) {
         await dataService.saveWorkOSTokens({
             access_token: access_token,
             refresh_token: refresh_token,
-            expires_at: Date.now() + (3600 * 1000), // Default to 1 hour
+            expires_at: Date.now() + ((expires_in || 3600) * 1000), // Use expires_in from response or default to 1 hour
             workos_user_id: user.id
         });
 
