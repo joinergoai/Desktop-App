@@ -224,7 +224,46 @@ export class CustomizeView extends LitElement {
             border-top: 1px solid rgba(255, 255, 255, 0.1);
         }
 
+        /* Toggle Switch Styles */
+        .toggle-switch {
+            position: relative;
+            width: 32px;
+            height: 16px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 16px;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            appearance: none;
+        }
 
+        .toggle-switch::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 12px;
+            height: 12px;
+            background: white;
+            border-radius: 50%;
+            transition: all 0.2s ease;
+        }
+
+        .toggle-switch:checked {
+            background: #34d399;
+        }
+
+        .toggle-switch:checked::after {
+            transform: translateX(16px);
+        }
+
+        .toggle-switch:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .toggle-switch:checked:hover {
+            background: #22c55e;
+        }
 
     `;
 
@@ -275,6 +314,7 @@ export class CustomizeView extends LitElement {
         this.isContentProtectionOn = true;
         this.isLoading = false;
         this.userEmail = '';
+        this.contentProtection = true;
 
         this.loadKeybinds();
         this.loadRateLimitSettings();
@@ -388,7 +428,8 @@ export class CustomizeView extends LitElement {
     async checkContentProtectionStatus() {
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
-            this.isContentProtectionOn = await ipcRenderer.invoke('get-content-protection-status');
+            this.contentProtection = await ipcRenderer.invoke('get-content-protection-status');
+            this.isContentProtectionOn = this.contentProtection;
             this.requestUpdate();
         }
     }
@@ -838,6 +879,10 @@ export class CustomizeView extends LitElement {
         const contentProtection = localStorage.getItem('contentProtection');
         if (contentProtection !== null) {
             this.contentProtection = contentProtection === 'true';
+        } else {
+            // Default to true and save it
+            this.contentProtection = true;
+            localStorage.setItem('contentProtection', 'true');
         }
     }
 
@@ -868,6 +913,13 @@ export class CustomizeView extends LitElement {
                             <span style="color: #34d399;">●</span> ${this.userEmail || 'Loading...'}
                         </div>
                     </div>
+                    <div class="invisibility-icon ${this.contentProtection ? 'visible' : ''}">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                            <circle cx="12" cy="12" r="3"/>
+                            ${!this.contentProtection ? html`<line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>` : ''}
+                        </svg>
+                    </div>
                 </div>
 
                 <div class="shortcuts-section">
@@ -881,6 +933,20 @@ export class CustomizeView extends LitElement {
                             </div>
                         </div>
                     `)}
+                </div>
+
+                <div class="api-key-section">
+                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 0;">
+                        <span style="color: white; font-size: 12px; font-weight: 400;">Content Protection</span>
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input 
+                                type="checkbox" 
+                                class="toggle-switch"
+                                .checked=${this.contentProtection}
+                                @change=${this.handleContentProtectionChange}
+                            />
+                        </label>
+                    </div>
                 </div>
                 
                 <div class="buttons-section">

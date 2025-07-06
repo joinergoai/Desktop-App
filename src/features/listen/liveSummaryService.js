@@ -2,13 +2,10 @@ require('dotenv').config();
 const { BrowserWindow, ipcMain } = require('electron');
 const { spawn } = require('child_process');
 const { saveDebugAudio } = require('./audioUtils.js');
-const { getSystemPrompt } = require('../../common/prompts/promptBuilder.js');
 const { connectToDeepgramSession } = require('../../common/services/deepgramClient.js');
-const { createOpenAiGenerativeClient, getOpenAiGenerativeModel } = require('../../common/services/openAiClient.js');
 const sqliteClient = require('../../common/services/sqliteClient');
 const dataService = require('../../common/services/dataService');
-
-
+const deepgramTokenService = require('../../common/services/deepgramTokenService');
 
 function getApiKey() {
     const { getStoredApiKey } = require('../../electron/windowManager.js');
@@ -29,317 +26,51 @@ function getApiKey() {
     return null;
 }
 
-function getDeepgramApiKey() {
+async function getDeepgramApiKey() {
+    try {
+        // First try to get a fresh temporary token from the backend
+        const canFetch = await deepgramTokenService.canFetchToken();
+        if (canFetch) {
+            console.log('[LiveSummaryService] Fetching new temporary Deepgram token from backend...');
+            const token = await deepgramTokenService.getNewToken();
+            return token;
+        }
+    } catch (error) {
+        console.error('[LiveSummaryService] Failed to fetch Deepgram token from backend:', error);
+    }
+
+    // Fall back to environment variable
     const envKey = process.env.DEEPGRAM_API_KEY;
     if (envKey) {
-        console.log('[LiveSummaryService] Using Deepgram API key for transcription');
+        console.log('[LiveSummaryService] Using Deepgram API key from environment (fallback)');
         return envKey;
     }
 
-    console.error('[LiveSummaryService] No Deepgram API key found in environment');
+    console.error('[LiveSummaryService] No Deepgram API key available');
     return null;
 }
 
 let currentSessionId = null;
 let conversationHistory = [];
+let isInitializedSession = false;
 let isInitializingSession = false;
-
 let mySttSession = null;
 let theirSttSession = null;
-
-let previousAnalysisResult = null;
-let analysisHistory = [];
-
 let systemAudioProc = null;
 
-let analysisIntervalId = null;
+let isInitialized = false;
+let mainWindow = null;
+
 
 /**
- * Converts conversation history into text to include in the prompt.
- * @param {Array<string>} conversationTexts - Array of conversation texts ["me: ~~~", "them: ~~~", ...]
- * @param {number} maxTurns - Maximum number of recent turns to include
- * @returns {string} - Formatted conversation string for the prompt
+ * Formats conversation history into a prompt-friendly format.
+ * @param {Array} history - Array of conversation texts
+ * @param {number} maxTurns - Maximum number of conversation turns to include
+ * @returns {string} Formatted conversation string
  */
-function formatConversationForPrompt(conversationTexts, maxTurns = 30) {
-    if (conversationTexts.length === 0) return '';
-    return conversationTexts.slice(-maxTurns).join('\n');
-}
-
-async function makeOutlineAndRequests(conversationTexts, maxTurns = 30) {
-    console.log(`🔍 makeOutlineAndRequests called - conversationTexts: ${conversationTexts.length}`);
-
-    if (conversationTexts.length === 0) {
-        console.log('⚠️ No conversation texts available for analysis');
-        return null;
-    }
-
-    const recentConversation = formatConversationForPrompt(conversationTexts, maxTurns);
-
-    // 이전 분석 결과를 프롬프트에 포함
-    let contextualPrompt = '';
-    if (previousAnalysisResult) {
-        contextualPrompt = `
-Previous Analysis Context:
-- Main Topic: ${previousAnalysisResult.topic.header}
-- Key Points: ${previousAnalysisResult.summary.slice(0, 3).join(', ')}
-- Last Actions: ${previousAnalysisResult.actions.slice(0, 2).join(', ')}
-
-Please build upon this context while analyzing the new conversation segments.
-`;
-    }
-
-    const basePrompt = getSystemPrompt('pickle_glass_analysis', '', false);
-    const systemPrompt = basePrompt.replace('{{CONVERSATION_HISTORY}}', recentConversation);
-
-    try {
-        const messages = [
-            {
-                role: 'system',
-                content: systemPrompt,
-            },
-            {
-                role: 'user',
-                content: `${contextualPrompt}
-
-Analyze the conversation and provide a structured summary. Format your response as follows:
-
-**Summary Overview**
-- Main discussion point with context
-
-**Key Topic: [Topic Name]**
-- First key insight
-- Second key insight
-- Third key insight
-
-**Extended Explanation**
-Provide 2-3 sentences explaining the context and implications.
-
-**Suggested Questions**
-1. First follow-up question?
-2. Second follow-up question?
-3. Third follow-up question?
-
-Keep all points concise and build upon previous analysis if provided.`,
-            },
-        ];
-
-        console.log('🤖 Sending analysis request to OpenAI...');
-
-        const API_KEY = getApiKey();
-        if (!API_KEY) {
-            throw new Error('No API key available');
-        }
-        const loggedIn = false; // Always use API key mode now
-        const keyType = loggedIn ? 'vKey' : 'apiKey';
-        console.log(`[LiveSummary] keyType: ${keyType}`);
-
-        const fetchUrl = keyType === 'apiKey' ? 'https://api.openai.com/v1/chat/completions' : 'https://api.portkey.ai/v1/chat/completions';
-
-        const headers =
-            keyType === 'apiKey'
-                ? {
-                      Authorization: `Bearer ${API_KEY}`,
-                      'Content-Type': 'application/json',
-                  }
-                : {
-                      'x-portkey-api-key': 'gRv2UGRMq6GGLJ8aVEB4e7adIewu',
-                      'x-portkey-virtual-key': API_KEY,
-                      'Content-Type': 'application/json',
-                  };
-
-        const response = await fetch(fetchUrl, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-                model: 'gpt-4.1',
-                messages,
-                temperature: 0.7,
-                max_tokens: 1024,
-            }),
-        });
-
-        if (!response.ok) {
-            throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
-        }
-
-        const result = await response.json();
-        const responseText = result.choices[0].message.content.trim();
-        console.log(`✅ Analysis response received: ${responseText}`);
-        const structuredData = parseResponseText(responseText, previousAnalysisResult);
-
-        // 분석 결과 저장
-        previousAnalysisResult = structuredData;
-        analysisHistory.push({
-            timestamp: Date.now(),
-            data: structuredData,
-            conversationLength: conversationTexts.length,
-        });
-
-        // 히스토리 크기 제한 (최근 10개만 유지)
-        if (analysisHistory.length > 10) {
-            analysisHistory.shift();
-        }
-
-        return structuredData;
-    } catch (error) {
-        console.error('❌ Error during analysis generation:', error.message);
-        return previousAnalysisResult; // 에러 시 이전 결과 반환
-    }
-}
-
-function parseResponseText(responseText, previousResult) {
-    const structuredData = {
-        summary: [],
-        topic: { header: '', bullets: [] },
-        actions: [],
-        followUps: ['✉️ Draft a follow-up email', '✅ Generate action items', '📝 Show summary'],
-    };
-
-    // 이전 결과가 있으면 기본값으로 사용
-    if (previousResult) {
-        structuredData.topic.header = previousResult.topic.header;
-        structuredData.summary = [...previousResult.summary];
-    }
-
-    try {
-        const lines = responseText.split('\n');
-        let currentSection = '';
-        let isCapturingTopic = false;
-        let topicName = '';
-
-        for (const line of lines) {
-            const trimmedLine = line.trim();
-
-            // 섹션 헤더 감지
-            if (trimmedLine.startsWith('**Summary Overview**')) {
-                currentSection = 'summary-overview';
-                continue;
-            } else if (trimmedLine.startsWith('**Key Topic:')) {
-                currentSection = 'topic';
-                isCapturingTopic = true;
-                topicName = trimmedLine.match(/\*\*Key Topic: (.+?)\*\*/)?.[1] || '';
-                if (topicName) {
-                    structuredData.topic.header = topicName + ':';
-                }
-                continue;
-            } else if (trimmedLine.startsWith('**Extended Explanation**')) {
-                currentSection = 'explanation';
-                continue;
-            } else if (trimmedLine.startsWith('**Suggested Questions**')) {
-                currentSection = 'questions';
-                continue;
-            }
-
-            // 컨텐츠 파싱
-            if (trimmedLine.startsWith('-') && currentSection === 'summary-overview') {
-                const summaryPoint = trimmedLine.substring(1).trim();
-                if (summaryPoint && !structuredData.summary.includes(summaryPoint)) {
-                    // 기존 summary 업데이트 (최대 5개 유지)
-                    structuredData.summary.unshift(summaryPoint);
-                    if (structuredData.summary.length > 5) {
-                        structuredData.summary.pop();
-                    }
-                }
-            } else if (trimmedLine.startsWith('-') && currentSection === 'topic') {
-                const bullet = trimmedLine.substring(1).trim();
-                if (bullet && structuredData.topic.bullets.length < 3) {
-                    structuredData.topic.bullets.push(bullet);
-                }
-            } else if (currentSection === 'explanation' && trimmedLine) {
-                // explanation을 topic bullets에 추가 (문장 단위로)
-                const sentences = trimmedLine
-                    .split(/\.\s+/)
-                    .filter(s => s.trim().length > 0)
-                    .map(s => s.trim() + (s.endsWith('.') ? '' : '.'));
-
-                sentences.forEach(sentence => {
-                    if (structuredData.topic.bullets.length < 3 && !structuredData.topic.bullets.includes(sentence)) {
-                        structuredData.topic.bullets.push(sentence);
-                    }
-                });
-            } else if (trimmedLine.match(/^\d+\./) && currentSection === 'questions') {
-                const question = trimmedLine.replace(/^\d+\.\s*/, '').trim();
-                if (question && question.includes('?')) {
-                    structuredData.actions.push(`❓ ${question}`);
-                }
-            }
-        }
-
-        // 기본 액션 추가
-        const defaultActions = ['✨ What should I say next?', '💬 Suggest follow-up questions'];
-        defaultActions.forEach(action => {
-            if (!structuredData.actions.includes(action)) {
-                structuredData.actions.push(action);
-            }
-        });
-
-        // 액션 개수 제한
-        structuredData.actions = structuredData.actions.slice(0, 5);
-
-        // 유효성 검증 및 이전 데이터 병합
-        if (structuredData.summary.length === 0 && previousResult) {
-            structuredData.summary = previousResult.summary;
-        }
-        if (structuredData.topic.bullets.length === 0 && previousResult) {
-            structuredData.topic.bullets = previousResult.topic.bullets;
-        }
-    } catch (error) {
-        console.error('❌ Error parsing response text:', error);
-        // 에러 시 이전 결과 반환
-        return (
-            previousResult || {
-                summary: [],
-                topic: { header: 'Analysis in progress', bullets: [] },
-                actions: ['✨ What should I say next?', '💬 Suggest follow-up questions'],
-                followUps: ['✉️ Draft a follow-up email', '✅ Generate action items', '📝 Show summary'],
-            }
-        );
-    }
-
-    console.log('📊 Final structured data:', JSON.stringify(structuredData, null, 2));
-    return structuredData;
-}
-
-/**
- * Triggers analysis when conversation history reaches 5 texts.
- */
-async function triggerAnalysisIfNeeded() {
-    if (conversationHistory.length >= 3 && conversationHistory.length % 3 === 0) {
-        console.log(`🚀 Triggering analysis (non-blocking) - ${conversationHistory.length} conversation texts accumulated`);
-
-        makeOutlineAndRequests(conversationHistory)
-            .then(data => {
-                if (data) {
-                    console.log('📤 Sending structured data to renderer');
-                    sendToRenderer('update-structured-data', data);
-                } else {
-                    console.log('❌ No analysis data returned from non-blocking call');
-                }
-            })
-            .catch(error => {
-                console.error('❌ Error in non-blocking analysis:', error);
-            });
-    }
-}
-
-/**
- * Schedules periodic updates of outline and analysis every 10 seconds. - DEPRECATED
- * Now analysis is triggered every 5 conversation texts.
- */
-function startAnalysisInterval() {
-    console.log('⏰ Analysis will be triggered every 5 conversation texts (not on timer)');
-
-    if (analysisIntervalId) {
-        clearInterval(analysisIntervalId);
-        analysisIntervalId = null;
-    }
-}
-
-function stopAnalysisInterval() {
-    if (analysisIntervalId) {
-        clearInterval(analysisIntervalId);
-        analysisIntervalId = null;
-    }
+function formatConversationForPrompt(history, maxTurns = 30) {
+    const recentHistory = history.slice(-maxTurns);
+    return recentHistory.join('\n');
 }
 
 function sendToRenderer(channel, data) {
@@ -366,10 +97,6 @@ async function initializeNewSession() {
         console.log(`[DB] New session started in DB: ${currentSessionId}`);
 
         conversationHistory = [];
-
-        // 🔄 Reset analysis state so the new session starts fresh
-        previousAnalysisResult = null;
-        analysisHistory = [];
 
         console.log('New conversation session started:', currentSessionId);
         return true;
@@ -404,8 +131,6 @@ async function saveConversationTurn(speaker, transcription) {
         console.log(`💬 Saved conversation text: ${conversationText}`);
         console.log(`📈 Total conversation history: ${conversationHistory.length} texts`);
 
-        triggerAnalysisIfNeeded();
-
         const conversationTurn = {
             speaker: speaker,
             timestamp: Date.now(),
@@ -435,10 +160,22 @@ async function initializeLiveSummarySession(language = 'en') {
     sendToRenderer('update-status', 'Initializing sessions...');
 
     // Get Deepgram API key for transcription
-    const DEEPGRAM_KEY = getDeepgramApiKey();
+    const DEEPGRAM_KEY = await getDeepgramApiKey();
     if (!DEEPGRAM_KEY) {
         console.error('FATAL ERROR: Deepgram API Key is not defined.');
-        sendToRenderer('update-status', 'Deepgram API Key not configured.');
+        
+        // Check if user is authenticated
+        const canFetch = await deepgramTokenService.canFetchToken();
+        if (!canFetch) {
+            sendToRenderer('update-status', 'Please sign in to use speech-to-text.');
+            sendToRenderer('auth-required', { 
+                message: 'Authentication required for speech-to-text',
+                reason: 'token'
+            });
+        } else {
+            sendToRenderer('update-status', 'Failed to get speech-to-text token. Please check your connection.');
+        }
+        
         isInitializingSession = false;
         sendToRenderer('session-initializing', false);
         return false;
@@ -545,7 +282,6 @@ async function initializeLiveSummarySession(language = 'en') {
         }
 
         console.log('✅ Both STT sessions initialized successfully.');
-        triggerAnalysisIfNeeded();
 
         sendToRenderer('session-state-changed', { isActive: true });
 
@@ -713,38 +449,31 @@ function isSessionActive() {
 }
 
 async function closeSession() {
-    try {
-        stopMacOSAudioCapture();
-        stopAnalysisInterval();
-
-        if (currentSessionId) {
-            await sqliteClient.endSession(currentSessionId);
-            console.log(`[DB] Session ${currentSessionId} ended.`);
-        }
-
-        const closePromises = [];
-        if (mySttSession) {
-            mySttSession.close();
-            mySttSession = null;
-        }
-        if (theirSttSession) {
-            theirSttSession.close();
-            theirSttSession = null;
-        }
-
-        console.log('All sessions closed.');
-
-        currentSessionId = null;
-        conversationHistory = [];
-
-        sendToRenderer('session-state-changed', { isActive: false });
-        sendToRenderer('session-did-close');
-
-        return { success: true };
-    } catch (error) {
-        console.error('Error closing sessions:', error);
-        return { success: false, error: error.message };
+    if (!isSessionActive()) {
+        console.log('No active session to close.');
+        return;
     }
+
+    console.log('🛑 Closing live summary session...');
+
+    stopMacOSAudioCapture();
+
+    if (mySttSession) {
+        mySttSession.close();
+        mySttSession = null;
+    }
+    if (theirSttSession) {
+        theirSttSession.close();
+        theirSttSession = null;
+    }
+
+    sendToRenderer('session-state-changed', { isActive: false });
+    sendToRenderer('session-closed', { totalTurns: conversationHistory.length });
+    sendToRenderer('update-status', 'Session closed.');
+
+    // Reset session state
+    conversationHistory = [];
+    currentSessionId = null;
 }
 
 function setupLiveSummaryIpcHandlers() {
@@ -834,30 +563,6 @@ function setupLiveSummaryIpcHandlers() {
             return { success: true };
         } catch (error) {
             console.error('Error updating Google Search setting:', error);
-            return { success: false, error: error.message };
-        }
-    });
-
-    ipcMain.handle('force-analysis', async (event) => {
-        try {
-            if (conversationHistory.length === 0) {
-                console.log('⚠️ No conversation history available for analysis');
-                return { success: false, error: 'No conversation history available' };
-            }
-
-            console.log(`🔄 Manual analysis triggered with ${conversationHistory.length} conversation texts`);
-            
-            const data = await makeOutlineAndRequests(conversationHistory);
-            
-            if (data) {
-                console.log('📤 Sending manually triggered analysis data to renderer');
-                sendToRenderer('update-structured-data', data);
-                return { success: true };
-            } else {
-                return { success: false, error: 'No analysis data generated' };
-            }
-        } catch (error) {
-            console.error('❌ Error during manual analysis:', error);
             return { success: false, error: error.message };
         }
     });

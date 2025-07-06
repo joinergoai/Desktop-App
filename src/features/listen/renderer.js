@@ -532,22 +532,6 @@ ipcRenderer.on('stt-update', (event, data) => {
     }
 });
 
-
-ipcRenderer.on('update-structured-data', (_, structuredData) => {
-    console.log('📥 Received structured data update:', structuredData);
-    window.pickleGlass.structuredData = structuredData;
-    window.pickleGlass.setStructuredData(structuredData);
-});
-window.pickleGlass.structuredData = {
-    summary: [],
-    topic: { header: '', bullets: [] },
-    actions: [],
-};
-window.pickleGlass.setStructuredData = data => {
-    window.pickleGlass.structuredData = data;
-    pickleGlass.e()?.updateStructuredData?.(data);
-};
-
 async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'medium') {
     // Store the image quality for manual screenshots
     currentImageQuality = imageQuality;
@@ -1297,17 +1281,9 @@ ipcRenderer.on('session-state-changed', (_event, { isActive }) => {
         console.log('[Renderer] Session ended – stopping local capture');
         stopCapture();
     } else {
-        console.log('[Renderer] New session started – clearing in-memory history and summaries');
+        console.log('[Renderer] New session started – clearing in-memory history');
 
-        // Reset live conversation & analysis caches
+        // Reset live conversation caches
         realtimeConversationHistory = [];
-
-        const blankData = {
-            summary: [],
-            topic: { header: '', bullets: [] },
-            actions: [],
-            followUps: [],
-        };
-        window.pickleGlass.setStructuredData(blankData);
     }
 });

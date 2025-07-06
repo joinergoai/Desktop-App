@@ -92,7 +92,7 @@ export class AssistantView extends LitElement {
             /* outline: 0.5px rgba(255, 255, 255, 0.5) solid; */
             /* outline-offset: -1px; */
             width: 100%;
-            min-height: 200px;
+            min-height: 150px;
         }
 
         .assistant-container::after {
@@ -130,8 +130,8 @@ export class AssistantView extends LitElement {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 6px 16px;
-            min-height: 32px;
+            padding: 5px 12px;
+            min-height: 28px;
             position: relative;
             z-index: 1;
             width: 100%;
@@ -142,7 +142,7 @@ export class AssistantView extends LitElement {
 
         .bar-left-text {
             color: white;
-            font-size: 13px;
+            font-size: 12px;
             font-family: 'Helvetica Neue', sans-serif;
             font-weight: 500;
             position: relative;
@@ -175,30 +175,30 @@ export class AssistantView extends LitElement {
 
         .bar-controls {
             display: flex;
-            gap: 4px;
+            gap: 3px;
             align-items: center;
             flex-shrink: 0;
-            width: 120px;
+            width: auto;
             justify-content: flex-end;
             box-sizing: border-box;
-            padding: 4px;
+            padding: 2px;
         }
 
         .toggle-button {
             display: flex;
             align-items: center;
-            gap: 5px;
+            gap: 4px;
             background: transparent;
             color: rgba(255, 255, 255, 0.9);
             border: none;
             outline: none;
             box-shadow: none;
-            padding: 4px 8px;
-            border-radius: 5px;
-            font-size: 11px;
+            padding: 3px 6px;
+            border-radius: 4px;
+            font-size: 10px;
             font-weight: 500;
             cursor: pointer;
-            height: 24px;
+            height: 20px;
             white-space: nowrap;
             transition: background-color 0.15s ease;
             justify-content: center;
@@ -210,8 +210,8 @@ export class AssistantView extends LitElement {
 
         .toggle-button svg {
             flex-shrink: 0;
-            width: 12px;
-            height: 12px;
+            width: 10px;
+            height: 10px;
         }
 
         .copy-button {
@@ -220,14 +220,14 @@ export class AssistantView extends LitElement {
             border: none;
             outline: none;
             box-shadow: none;
-            padding: 4px;
+            padding: 3px;
             border-radius: 3px;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            min-width: 24px;
-            height: 24px;
+            min-width: 20px;
+            height: 20px;
             flex-shrink: 0;
             transition: background-color 0.15s ease;
             position: relative; /* For icon positioning */
@@ -263,12 +263,12 @@ export class AssistantView extends LitElement {
 
         .transcription-container {
             overflow-y: auto;
-            padding: 12px 12px 16px 12px;
+            padding: 8px 10px 12px 10px;
             display: flex;
             flex-direction: column;
-            gap: 8px;
-            min-height: 150px;
-            max-height: 600px;
+            gap: 6px;
+            min-height: 120px;
+            max-height: 400px;
             position: relative;
             z-index: 1;
             flex: 1;
@@ -294,14 +294,14 @@ export class AssistantView extends LitElement {
         }
 
         .stt-message {
-            padding: 8px 12px;
-            border-radius: 12px;
+            padding: 6px 10px;
+            border-radius: 10px;
             max-width: 80%;
             word-wrap: break-word;
             word-break: break-word;
-            line-height: 1.5;
-            font-size: 13px;
-            margin-bottom: 4px;
+            line-height: 1.4;
+            font-size: 12px;
+            margin-bottom: 3px;
             box-sizing: border-box;
         }
 
@@ -323,11 +323,11 @@ export class AssistantView extends LitElement {
 
         .insights-container {
             overflow-y: auto;
-            padding: 12px 16px 16px 16px;
+            padding: 0;
             position: relative;
             z-index: 1;
-            min-height: 150px;
-            max-height: 600px;
+            min-height: 120px;
+            max-height: 400px;
             flex: 1;
         }
 
@@ -473,59 +473,100 @@ export class AssistantView extends LitElement {
             font-size: 10px;
             color: rgba(255, 255, 255, 0.7);
         }
-        
-        .insights-title-container {
+
+        /* Action card styles */
+        .action-card {
             display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin: 12px 0 8px 0;
-        }
-        
-        .insights-title {
-            color: rgba(255, 255, 255, 0.8);
-            font-size: 15px;
-            font-weight: 500;
-            font-family: 'Helvetica Neue', sans-serif;
-        }
-        
-        .refresh-button {
-            background: transparent;
-            color: rgba(255, 255, 255, 0.6);
-            border: none;
-            outline: none;
-            box-shadow: none;
-            padding: 4px;
-            border-radius: 4px;
+            flex-direction: column;
+            gap: 4px;
+            padding: 10px 12px;
+            margin: 6px 0;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
             cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .action-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, transparent 100%);
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+
+        .action-card:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.2);
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        .action-card:hover::before {
+            opacity: 1;
+        }
+
+        .action-header {
             display: flex;
             align-items: center;
-            justify-content: center;
-            width: 24px;
-            height: 24px;
-            transition: all 0.2s ease;
+            gap: 8px;
         }
-        
-        .refresh-button:hover {
-            background: rgba(255, 255, 255, 0.1);
+
+        .action-icon {
+            font-size: 16px;
+            line-height: 1;
+            filter: brightness(1.2);
+        }
+
+        .action-title {
+            font-size: 12px;
+            font-weight: 500;
+            color: #ffffff;
+            flex: 1;
+        }
+
+        .action-description {
+            font-size: 10px;
+            color: rgba(255, 255, 255, 0.7);
+            line-height: 1.3;
+            margin-left: 24px;
+        }
+
+        .insights-header {
+            text-align: center;
+            padding: 12px 16px 6px 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            margin-bottom: 8px;
+        }
+
+        .insights-header h3 {
+            font-size: 13px;
+            font-weight: 500;
             color: rgba(255, 255, 255, 0.9);
+            margin: 0 0 3px 0;
         }
-        
-        .refresh-button:active {
-            transform: scale(0.95);
+
+        .insights-header p {
+            font-size: 10px;
+            color: rgba(255, 255, 255, 0.6);
+            margin: 0;
+            line-height: 1.3;
         }
-        
-        .refresh-button.spinning svg {
-            animation: spin 0.6s linear;
-        }
-        
-        @keyframes spin {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
+
+        .actions-wrapper {
+            padding: 6px 12px 12px 12px;
         }
     `;
 
     static properties = {
-        structuredData: { type: Object },
+        // structuredData: { type: Object },
         // outlines: { type: Array },
         // analysisRequests: { type: Array },
         sttMessages: { type: Array },
@@ -537,19 +578,30 @@ export class AssistantView extends LitElement {
         captureStartTime: { type: Number },
         isSessionActive: { type: Boolean },
         hasCompletedRecording: { type: Boolean },
-        isRefreshing: { type: Boolean },
+        // isRefreshing: { type: Boolean },
     };
 
     constructor() {
         super();
         // this.outlines = [];
         // this.analysisRequests = [];
-        this.structuredData = {
-            summary: [],
-            topic: { header: '', bullets: [] },
-            actions: [],
-            followUps: [],
-        };
+        this.hardcodedActions = [
+            {
+                icon: '💬',
+                title: 'What should I say next?',
+                description: 'Get intelligence suggestions for your next response'
+            },
+            {
+                icon: '📊',
+                title: 'Deal context',
+                description: 'Analyze the current deal or negotiation context'
+            },
+            {
+                icon: '💡',
+                title: 'Explain',
+                description: 'Get detailed explanations of complex topics'
+            }
+        ];
         this.sttMessages = [];
         this.viewMode = 'insights';
         this.isHovering = false;
@@ -572,7 +624,6 @@ export class AssistantView extends LitElement {
         this.isHljsLoaded = false;
         this.isSessionActive = false;
         this.hasCompletedRecording = false;
-        this.isRefreshing = false;
 
         // --- Debug Utilities ---
         this._debug = {
@@ -760,7 +811,7 @@ export class AssistantView extends LitElement {
 
                 const idealHeight = topBarHeight + contentHeight + 20;
 
-                const targetHeight = Math.min(700, Math.max(200, idealHeight));
+                const targetHeight = Math.min(500, Math.max(150, idealHeight));
 
                 console.log(
                     `[Height Adjusted] Mode: ${this.viewMode}, TopBar: ${topBarHeight}px, Content: ${contentHeight}px, Ideal: ${idealHeight}px, Target: ${targetHeight}px`
@@ -789,34 +840,6 @@ export class AssistantView extends LitElement {
         this.requestUpdate();
     }
 
-    parseOutlineData() {
-        const result = {
-            currentSummary: [],
-            mainTopicHeading: '',
-            mainTopicBullets: [],
-        };
-
-        if (!this.outlines || this.outlines.length === 0) {
-            return result;
-        }
-
-        const allBullets = this.outlines.filter(item => item.startsWith('BULLET::'));
-        if (allBullets.length > 0) {
-            result.currentSummary.push(allBullets[0].replace('BULLET::', '').trim());
-        }
-
-        const heading = this.outlines.find(item => item.startsWith('HEADING::'));
-        if (heading) {
-            result.mainTopicHeading = heading.replace('HEADING::', '').trim();
-        }
-
-        if (allBullets.length > 1) {
-            result.mainTopicBullets = allBullets.slice(1).map(item => item.replace('BULLET::', '').trim());
-        }
-
-        return result;
-    }
-
     async handleCopy() {
         if (this.copyState === 'copied') return;
 
@@ -825,26 +848,8 @@ export class AssistantView extends LitElement {
         if (this.viewMode === 'transcript') {
             textToCopy = this.sttMessages.map(msg => `${msg.speaker}: ${msg.text}`).join('\n');
         } else {
-            const data = this.structuredData || { summary: [], topic: { header: '', bullets: [] }, actions: [] };
-            let sections = [];
-
-            if (data.summary && data.summary.length > 0) {
-                sections.push(`Current Summary:\n${data.summary.map(s => `• ${s}`).join('\n')}`);
-            }
-
-            if (data.topic && data.topic.header && data.topic.bullets.length > 0) {
-                sections.push(`\n${data.topic.header}:\n${data.topic.bullets.map(b => `• ${b}`).join('\n')}`);
-            }
-
-            if (data.actions && data.actions.length > 0) {
-                sections.push(`\nActions:\n${data.actions.map(a => `▸ ${a}`).join('\n')}`);
-            }
-
-            if (data.followUps && data.followUps.length > 0) {
-                sections.push(`\nFollow-Ups:\n${data.followUps.map(f => `▸ ${f}`).join('\n')}`);
-            }
-
-            textToCopy = sections.join('\n\n').trim();
+            // Copy the hardcoded actions
+            textToCopy = this.hardcodedActions.map(action => `• ${action.title}`).join('\n');
         }
 
         try {
@@ -864,33 +869,6 @@ export class AssistantView extends LitElement {
             }, 1500);
         } catch (err) {
             console.error('Failed to copy:', err);
-        }
-    }
-
-    async handleRefresh() {
-        if (this.isRefreshing || !window.require) return;
-        
-        console.log('🔄 Manual refresh triggered');
-        this.isRefreshing = true;
-        this.requestUpdate();
-        
-        try {
-            const { ipcRenderer } = window.require('electron');
-            const result = await ipcRenderer.invoke('force-analysis');
-            
-            if (result.success) {
-                console.log('✅ Analysis refresh triggered successfully');
-            } else {
-                console.error('❌ Failed to trigger analysis:', result.error);
-            }
-        } catch (error) {
-            console.error('❌ Error triggering refresh:', error);
-        } finally {
-            // Reset animation after a delay
-            setTimeout(() => {
-                this.isRefreshing = false;
-                this.requestUpdate();
-            }, 600);
         }
     }
 
@@ -1013,14 +991,8 @@ export class AssistantView extends LitElement {
                 if (!wasActive && isActive) {
                     this.hasCompletedRecording = false;
 
-                    // 🔄 Reset transcript & analysis when a fresh session starts
+                    // 🔄 Reset transcript when a fresh session starts
                     this.sttMessages = [];
-                    this.structuredData = {
-                        summary: [],
-                        topic: { header: '', bullets: [] },
-                        actions: [],
-                        followUps: [],
-                    };
                     this.requestUpdate();
                 }
                 if (wasActive && !isActive) {
@@ -1074,8 +1046,6 @@ export class AssistantView extends LitElement {
 
         if (changedProperties.has('viewMode')) {
             this.adjustWindowHeight();
-        } else if (changedProperties.has('outlines') || changedProperties.has('analysisRequests') || changedProperties.has('structuredData')) {
-            this.adjustWindowHeightThrottled();
         }
     }
 
@@ -1083,16 +1053,10 @@ export class AssistantView extends LitElement {
         const displayText = this.isHovering
             ? this.viewMode === 'transcript'
                 ? 'Copy Transcript'
-                : 'Copy Glass Analysis'
+                : 'Copy Quick Actions'
             : this.viewMode === 'insights'
-            ? `Live insights`
+            ? `AI Assistant`
             : `Glass is Listening ${this.elapsedTime}`;
-
-        const data = this.structuredData || {
-            summary: [],
-            topic: { header: '', bullets: [] },
-            actions: [],
-        };
 
         const getSpeakerClass = speaker => {
             return speaker.toLowerCase() === 'me' ? 'me' : 'them';
@@ -1108,18 +1072,18 @@ export class AssistantView extends LitElement {
                         <button class="toggle-button" @click=${this.toggleViewMode}>
                             ${this.viewMode === 'insights'
                                 ? html`
-                                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                           <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z" />
                                           <circle cx="12" cy="12" r="3" />
                                       </svg>
                                       <span>Show Transcript</span>
                                   `
                                 : html`
-                                      <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                           <path d="M9 11l3 3L22 4" />
                                           <path d="M22 12v7a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h11" />
                                       </svg>
-                                      <span>Show Insights</span>
+                                      <span>Show Assistant</span>
                                   `}
                         </button>
                         <button
@@ -1128,11 +1092,11 @@ export class AssistantView extends LitElement {
                             @mouseenter=${() => this.handleCopyHover(true)}
                             @mouseleave=${() => this.handleCopyHover(false)}
                         >
-                            <svg class="copy-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <svg class="copy-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
                                 <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
                             </svg>
-                            <svg class="check-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <svg class="check-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                                 <path d="M20 6L9 17l-5-5" />
                             </svg>
                         </button>
@@ -1144,89 +1108,24 @@ export class AssistantView extends LitElement {
                 </div>
 
                 <div class="insights-container ${this.viewMode !== 'insights' ? 'hidden' : ''}">
-                    <div class="insights-title-container">
-                        <div class="insights-title">Current Summary</div>
-                        <button class="refresh-button ${this.isRefreshing ? 'spinning' : ''}" 
-                                @click=${this.handleRefresh}
-                                title="Refresh analysis">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M23 4v6h-6" />
-                                <path d="M1 20v-6h6" />
-                                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-                            </svg>
-                        </button>
+                    <div class="actions-wrapper">
+                        ${this.hardcodedActions.map(
+                            (action, index) => html`
+                                <div
+                                    class="action-card"
+                                    data-markdown-id="action-${index}"
+                                    data-original-text="${action.title}"
+                                    @click=${() => this.handleMarkdownClick(action.title)}
+                                >
+                                    <div class="action-header">
+                                        <span class="action-icon">${action.icon}</span>
+                                        <span class="action-title">${action.title}</span>
+                                    </div>
+                                    <span class="action-description">${action.description}</span>
+                                </div>
+                            `
+                        )}
                     </div>
-                    ${data.summary.length > 0
-                        ? data.summary
-                              .slice(0, 5)
-                              .map(
-                                  (bullet, index) => html`
-                                      <div
-                                          class="markdown-content"
-                                          data-markdown-id="summary-${index}"
-                                          data-original-text="${bullet}"
-                                          @click=${() => this.handleMarkdownClick(bullet)}
-                                      >
-                                          ${bullet}
-                                      </div>
-                                  `
-                              )
-                        : html` <div class="request-item">No content yet...</div> `}
-                    ${data.topic.header
-                        ? html`
-                              <insights-title>${data.topic.header}</insights-title>
-                              ${data.topic.bullets
-                                  .slice(0, 3)
-                                  .map(
-                                      (bullet, index) => html`
-                                          <div
-                                              class="markdown-content"
-                                              data-markdown-id="topic-${index}"
-                                              data-original-text="${bullet}"
-                                              @click=${() => this.handleMarkdownClick(bullet)}
-                                          >
-                                              ${bullet}
-                                          </div>
-                                      `
-                                  )}
-                          `
-                        : ''}
-                    ${data.actions.length > 0
-                        ? html`
-                              <insights-title>Actions</insights-title>
-                              ${data.actions
-                                  .slice(0, 5)
-                                  .map(
-                                      (action, index) => html`
-                                          <div
-                                              class="markdown-content"
-                                              data-markdown-id="action-${index}"
-                                              data-original-text="${action}"
-                                              @click=${() => this.handleMarkdownClick(action)}
-                                          >
-                                              ${action}
-                                          </div>
-                                      `
-                                  )}
-                          `
-                        : ''}
-                    ${this.hasCompletedRecording && data.followUps && data.followUps.length > 0
-                        ? html`
-                              <insights-title>Follow-Ups</insights-title>
-                              ${data.followUps.map(
-                                  (followUp, index) => html`
-                                      <div
-                                          class="markdown-content"
-                                          data-markdown-id="followup-${index}"
-                                          data-original-text="${followUp}"
-                                          @click=${() => this.handleMarkdownClick(followUp)}
-                                      >
-                                          ${followUp}
-                                      </div>
-                                  `
-                              )}
-                          `
-                        : ''}
                 </div>
             </div>
         `;

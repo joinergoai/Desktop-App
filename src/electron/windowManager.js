@@ -1381,6 +1381,17 @@ function setupIpcHandlers(openaiSessionRef) {
         return isContentProtectionOn;
     });
 
+    ipcMain.handle('update-content-protection', (event, enabled) => {
+        isContentProtectionOn = enabled;
+        console.log(`[Protection] Content protection updated to: ${isContentProtectionOn}`);
+        windowPool.forEach(win => {
+            if (win && !win.isDestroyed()) {
+                win.setContentProtection(isContentProtectionOn);
+            }
+        });
+        return isContentProtectionOn;
+    });
+
     ipcMain.on('header-state-changed', async (event, state) => {
         console.log(`[WindowManager] Header state changed to: ${state}`);
         currentHeaderState = state;
