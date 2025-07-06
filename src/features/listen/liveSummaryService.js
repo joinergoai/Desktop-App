@@ -7,25 +7,6 @@ const sqliteClient = require('../../common/services/sqliteClient');
 const dataService = require('../../common/services/dataService');
 const deepgramTokenService = require('../../common/services/deepgramTokenService');
 
-function getApiKey() {
-    const { getStoredApiKey } = require('../../electron/windowManager.js');
-    const storedKey = getStoredApiKey();
-
-    if (storedKey) {
-        console.log('[LiveSummaryService] Using stored API key for analysis');
-        return storedKey;
-    }
-
-    const envKey = process.env.OPENAI_API_KEY;
-    if (envKey) {
-        console.log('[LiveSummaryService] Using environment API key for analysis');
-        return envKey;
-    }
-
-    console.error('[LiveSummaryService] No API key found for analysis');
-    return null;
-}
-
 async function getDeepgramApiKey() {
     try {
         // First try to get a fresh temporary token from the backend

@@ -318,76 +318,46 @@ class WindowLayoutManager {
         const settings = windowPool.get('settings');
         if (!settings?.getBounds || !settings.isVisible()) return;
 
-        // if (settings.__lockedByButton) return;
+        // Respect button-locked positioning to prevent repositioning conflicts
         if (settings.__lockedByButton) {
             const headerDisplay = getCurrentDisplay(windowPool.get('header'));
             const settingsDisplay = getCurrentDisplay(settings);
             if (headerDisplay.id !== settingsDisplay.id) {
                 settings.__lockedByButton = false;
             } else {
-                return; // 같은 화면이면 그대로 둔다
+                return; // Keep position if locked by button interaction
             }
         }
 
         const settingsBounds = settings.getBounds();
         const PAD = 5;
-
         const buttonPadding = 17;
+        
+        // Default position below and to the right of header
         let x = headerBounds.x + headerBounds.width - settingsBounds.width - buttonPadding;
         let y = headerBounds.y + headerBounds.height + PAD;
 
-        const otherVisibleWindows = [];
-        ['listen', 'ask'].forEach(name => {
-            const win = windowPool.get(name);
-            if (win && win.isVisible() && !win.isDestroyed()) {
-                otherVisibleWindows.push({
-                    name,
-                    bounds: win.getBounds(),
-                });
-            }
-        });
-
-        const settingsNewBounds = { x, y, width: settingsBounds.width, height: settingsBounds.height };
-        let hasOverlap = false;
-
-        for (const otherWin of otherVisibleWindows) {
-            if (this.boundsOverlap(settingsNewBounds, otherWin.bounds)) {
-                hasOverlap = true;
-                break;
-            }
+        // Check if we need to position above instead of below (bottom half of screen)
+        const spaceBelow = screenHeight - (headerBounds.y + headerBounds.height);
+        const spaceAbove = headerBounds.y;
+        
+        if (spaceBelow < settingsBounds.height + PAD * 2 && spaceAbove > settingsBounds.height + PAD * 2) {
+            // Position above header
+            y = headerBounds.y - settingsBounds.height - PAD;
         }
 
-        if (hasOverlap) {
-            x = headerBounds.x + headerBounds.width + PAD;
-            y = headerBounds.y;
-            settingsNewBounds.x = x;
-            settingsNewBounds.y = y;
-
-            if (x + settingsBounds.width > screenWidth - 10) {
-                x = headerBounds.x - settingsBounds.width - PAD;
-                settingsNewBounds.x = x;
-            }
-
-            if (x < 10) {
-                x = headerBounds.x + headerBounds.width - settingsBounds.width - buttonPadding;
-                y = headerBounds.y - settingsBounds.height - PAD;
-                settingsNewBounds.x = x;
-                settingsNewBounds.y = y;
-
-                if (y < 10) {
-                    x = headerBounds.x + headerBounds.width - settingsBounds.width;
-                    y = headerBounds.y + headerBounds.height + PAD;
-                }
-            }
-        }
-
+        // Simple boundary checks - avoid complex repositioning logic
         x = Math.max(10, Math.min(screenWidth - settingsBounds.width - 10, x));
         y = Math.max(10, Math.min(screenHeight - settingsBounds.height - 10, y));
 
-        settings.setBounds({ x, y });
-        settings.moveTop();
+        // Only reposition if significantly different to avoid micro-adjustments
+        const currentBounds = settings.getBounds();
+        const threshold = 5;
+        if (Math.abs(currentBounds.x - x) > threshold || Math.abs(currentBounds.y - y) > threshold) {
+            settings.setBounds({ x, y });
+        }
 
-        // console.log(`[Layout] Settings positioned at (${x}, ${y}) ${hasOverlap ? '(adjusted for overlap)' : '(default position)'}`);
+        // console.log(`[Layout] Settings positioned at (${x}, ${y})`);
     }
 
     boundsOverlap(bounds1, bounds2) {
@@ -1280,7 +1250,7 @@ function setupIpcHandlers(openaiSessionRef) {
             }
 
             if (name === 'settings') {
-                // Adjust position based on button bounds
+                // Position first, then show to avoid focus conflicts
                 const header = windowPool.get('header');
                 const headerBounds = header?.getBounds() ?? { x: 0, y: 0 };
                 const settingsBounds = win.getBounds();
@@ -1291,19 +1261,40 @@ function setupIpcHandlers(openaiSessionRef) {
                 let x = Math.round(headerBounds.x + (bounds?.x ?? 0) + (bounds?.width ?? 0) / 2 - settingsBounds.width / 2);
                 let y = Math.round(headerBounds.y + (bounds?.y ?? 0) + (bounds?.height ?? 0) + 31);
 
+                // Check if we need to position above (bottom of screen)
+                const spaceBelow = waH - (headerBounds.y - waY + headerBounds.height);
+                if (spaceBelow < settingsBounds.height + 40) {
+                    // Position above header with gap - stable but larger spacing
+                    y = Math.round(headerBounds.y - settingsBounds.height - 5);
+                }
+
                 x = Math.max(waX + 10, Math.min(waX + waW - settingsBounds.width - 10, x));
                 y = Math.max(waY + 10, Math.min(waY + waH - settingsBounds.height - 10, y));
 
+                // Set position before showing to minimize focus disruption
                 win.setBounds({ x, y });
                 win.__lockedByButton = true;
-                console.log(`[WindowManager] Positioning settings window at (${x}, ${y}) based on button bounds.`);
-            }
-
-            win.show();
-            win.moveTop();
-
-            if (name === 'settings') {
+                
+                // Show window first
+                win.show();
+                
+                // Set properties after showing to reduce focus conflicts
                 win.setAlwaysOnTop(true);
+                
+                // For above positioning, use longer delay to prevent flashing
+                const isPositionedAbove = spaceBelow < settingsBounds.height + 40;
+                const focusDelay = isPositionedAbove ? 200 : 100;
+                
+                setTimeout(() => {
+                    if (!win.isDestroyed()) {
+                        win.moveTop();
+                    }
+                }, focusDelay);
+                
+                console.log(`[WindowManager] Positioning settings window at (${x}, ${y}) based on button bounds.`);
+            } else {
+                win.show();
+                win.moveTop();
             }
             // updateLayout();
         }

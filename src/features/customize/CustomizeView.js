@@ -339,12 +339,14 @@ export class CustomizeView extends LitElement {
 
         setTimeout(() => this.updateScrollHeight(), 100);
 
-        this.addEventListener('mouseenter', async () => {
+        // Add mouseenter handler to cancel hide timer when hovering over the panel
+        this.addEventListener('mouseenter', () => {
             if (window.require) {
                 window.require('electron').ipcRenderer.send('cancel-hide-window', 'settings');
             }
         });
 
+        // Add mouseleave handler to hide panel when mouse leaves
         this.addEventListener('mouseleave', () => {
             if (window.require) {
                 window.require('electron').ipcRenderer.send('hide-window', 'settings');
