@@ -8,7 +8,6 @@ const sharp = require('sharp');
 const sqliteClient = require('../common/services/sqliteClient');
 const fetch = require('node-fetch');
 
-let currentFirebaseUser = null;
 let isContentProtectionOn = true;
 let currentDisplayId = null;
 
@@ -224,7 +223,7 @@ class WindowLayoutManager {
 
         const PAD = 8;
 
-        /* ① 헤더 중심 X를 “디스플레이 기준 상대좌표”로 변환  */
+        /* ① 헤더 중심 X를 "디스플레이 기준 상대좌표"로 변환  */
         const headerCenterXRel = headerBounds.x - workAreaX + headerBounds.width / 2;
 
         let askBounds = askVisible ? ask.getBounds() : null;
@@ -1382,12 +1381,31 @@ function setupIpcHandlers(openaiSessionRef) {
         return isContentProtectionOn;
     });
 
-    ipcMain.on('header-state-changed', (event, state) => {
+    ipcMain.on('header-state-changed', async (event, state) => {
         console.log(`[WindowManager] Header state changed to: ${state}`);
         currentHeaderState = state;
 
         if (state === 'app') {
             createFeatureWindows(windowPool.get('header'));
+            
+            // Notify all windows about the current user after state change
+            // Add a small delay to ensure windows are fully loaded
+            setTimeout(async () => {
+                const dataService = require('../common/services/dataService');
+                const user = await dataService.sqliteClient.getUser(dataService.currentUserId);
+                if (user) {
+                    console.log('[WindowManager] Notifying windows about authenticated user after state change');
+                    windowPool.forEach(win => {
+                        if (win && !win.isDestroyed()) {
+                            win.webContents.send('user-changed', {
+                                uid: user.uid,
+                                display_name: user.display_name,
+                                email: user.email
+                            });
+                        }
+                    });
+                }
+            }, 500);
         } else {         // 'apikey'
             destroyFeatureWindows();
         }
@@ -1696,116 +1714,6 @@ function setupIpcHandlers(openaiSessionRef) {
             };
         }
     });
-
-    ipcMain.handle('firebase-auth-state-changed', (event, user) => {
-        console.log('[WindowManager] Firebase auth state changed:', user ? user.email : 'null');
-        const previousUser = currentFirebaseUser;
-
-        // 🛡️  Guard: ignore duplicate events where auth state did not actually change
-        const sameUser = user && previousUser && user.uid && previousUser.uid && user.uid === previousUser.uid;
-        const bothNull = !user && !previousUser;
-        if (sameUser || bothNull) {
-            // No real state change ➜ skip further processing
-            console.log('[WindowManager] No real state change, skipping further processing');
-            return;
-        }
-
-        currentFirebaseUser = user;
-
-        if (user && user.email) {
-            (async () => {
-                try {
-                    const existingKey = getStoredApiKey();
-                    if (existingKey) {
-                        console.log('[WindowManager] Virtual key already exists, skipping fetch');
-                        return;
-                    }
-
-                    if (!user.idToken) {
-                        console.warn('[WindowManager] No ID token available, cannot fetch virtual key');
-                        return;
-                    }
-
-                    console.log('[WindowManager] Fetching virtual key via onAuthStateChanged');
-                    const vKey = await getVirtualKeyByEmail(user.email, user.idToken);
-                    console.log('[WindowManager] Virtual key fetched successfully');
-
-                    setApiKey(vKey)
-                        .then(() => {
-                            windowPool.forEach(win => {
-                                if (win && !win.isDestroyed()) {
-                                    win.webContents.send('api-key-updated');
-                                }
-                            });
-                        })
-                        .catch(err => console.error('[WindowManager] Failed to save virtual key:', err));
-                } catch (err) {
-                    console.error('[WindowManager] Virtual key fetch failed:', err);
-
-                    if (err.message.includes('token') || err.message.includes('Authentication')) {
-                        windowPool.forEach(win => {
-                            if (win && !win.isDestroyed()) {
-                                win.webContents.send('auth-error', {
-                                    message: 'Authentication expired. Please login again.',
-                                    shouldLogout: true,
-                                });
-                            }
-                        });
-                    }
-                }
-            })();
-        }
-
-        // If the user logged out, also hide the settings window
-        if (!user && previousUser) {
-            // ADDED: Only trigger on actual state change from logged in to logged out
-            console.log('[WindowManager] User logged out, clearing API key and notifying renderers');
-
-            setApiKey(null)
-                .then(() => {
-                    console.log('[WindowManager] API key cleared successfully after logout');
-                    windowPool.forEach(win => {
-                        if (win && !win.isDestroyed()) {
-                            win.webContents.send('api-key-removed');
-                        }
-                    });
-                })
-                .catch(err => {
-                    console.error('[WindowManager] setApiKey error:', err);
-                    windowPool.forEach(win => {
-                        if (win && !win.isDestroyed()) {
-                            win.webContents.send('api-key-removed');
-                        }
-                    });
-                });
-
-            const settingsWindow = windowPool.get('settings');
-            if (settingsWindow && settingsWindow.isVisible()) {
-                settingsWindow.hide();
-                console.log('[WindowManager] Settings window hidden after logout.');
-            }
-        }
-        // Broadcast to all windows
-        windowPool.forEach(win => {
-            if (win && !win.isDestroyed()) {
-                win.webContents.send('firebase-user-updated', user);
-            }
-        });
-    });
-
-    ipcMain.handle('get-current-firebase-user', () => {
-        return currentFirebaseUser;
-    });
-
-    ipcMain.handle('firebase-logout', () => {
-        console.log('[WindowManager] Received request to log out.');
-
-        const header = windowPool.get('header');
-        if (header && !header.isDestroyed()) {
-            console.log('[WindowManager] Header window exists, sending to renderer...');
-            header.webContents.send('request-firebase-logout');
-        }
-    });
 }
 
 let storedApiKey = null;
@@ -1831,9 +1739,17 @@ async function setApiKey(apiKey) {
 
 async function loadApiKeyFromDb() {
     try {
-        const user = await sqliteClient.getUser(sqliteClient.defaultUserId);
+        const dataService = require('../common/services/dataService');
+        const user = await dataService.sqliteClient.getUser(dataService.currentUserId);
+        
+        // Don't load API key if user is authenticated via WorkOS
+        if (user && user.workos_access_token) {
+            console.log('[WindowManager] User authenticated via WorkOS, not loading API key');
+            return null;
+        }
+        
         if (user && user.api_key) {
-            console.log('[WindowManager] API key loaded from SQLite for default user.');
+            console.log('[WindowManager] API key loaded from SQLite for user:', user.email);
             return user.api_key;
         }
         return null;
@@ -1843,18 +1759,7 @@ async function loadApiKeyFromDb() {
     }
 }
 
-function getCurrentFirebaseUser() {
-    return currentFirebaseUser;
-}
 
-function isFirebaseLoggedIn() {
-    return !!currentFirebaseUser;
-}
-
-function setCurrentFirebaseUser(user) {
-    currentFirebaseUser = user;
-    console.log('[WindowManager] Firebase user updated:', user ? user.email : 'null');
-}
 
 function getStoredApiKey() {
     return storedApiKey;
@@ -1906,6 +1811,16 @@ function setupApiKeyIPC() {
     });
 
     ipcMain.handle('get-current-api-key', async () => {
+        // Check if user is authenticated via WorkOS first
+        const dataService = require('../common/services/dataService');
+        const user = await dataService.sqliteClient.getUser(dataService.currentUserId);
+        
+        // If user has WorkOS tokens, don't return API key
+        if (user && user.workos_access_token) {
+            console.log('[WindowManager] User authenticated via WorkOS, returning null for API key');
+            return null;
+        }
+        
         if (storedApiKey === null) {
             const dbKey = await loadApiKeyFromDb();
             if (dbKey) {
@@ -2293,32 +2208,7 @@ function clearApiKey() {
     setApiKey(null);
 }
 
-async function getVirtualKeyByEmail(email, idToken) {
-    if (!idToken) {
-        throw new Error('Firebase ID token is required for virtual key request');
-    }
 
-    const resp = await fetch('https://serverless-api-sf3o.vercel.app/api/virtual_key', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({ email: email.trim().toLowerCase() }),
-        redirect: 'follow',
-    });
-
-    const json = await resp.json().catch(() => ({}));
-    if (!resp.ok) {
-        console.error('[VK] API request failed:', json.message || 'Unknown error');
-        throw new Error(json.message || `HTTP ${resp.status}: Virtual key request failed`);
-    }
-
-    const vKey = json?.data?.virtualKey || json?.data?.virtual_key || json?.data?.newVKey?.slug;
-
-    if (!vKey) throw new Error('virtual key missing in response');
-    return vKey;
-}
 
 // Helper function to avoid code duplication
 async function captureScreenshotInternal(options = {}) {
@@ -2377,8 +2267,4 @@ module.exports = {
     setApiKey,
     getStoredApiKey,
     clearApiKey,
-    getCurrentFirebaseUser,
-    isFirebaseLoggedIn,
-    setCurrentFirebaseUser,
-    getVirtualKeyByEmail,
 };

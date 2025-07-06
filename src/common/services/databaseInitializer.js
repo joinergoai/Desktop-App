@@ -62,6 +62,13 @@ class DatabaseInitializer {
                 console.log('[DB] Default data initialized.');
             }
 
+            // Verify preset templates
+            const presetTemplates = await sqliteClient.getPresetTemplates();
+            if (!presetTemplates || presetTemplates.length === 0) {
+                throw new Error('Preset templates verification failed.');
+            }
+            console.log(`[DatabaseInitializer] Preset templates verified, count: ${presetTemplates.length}`);
+
             this.isInitialized = true;
             console.log('[DB] Database initialized successfully');
             return true;
@@ -102,13 +109,9 @@ class DatabaseInitializer {
         try {
             await sqliteClient.connect(); // Connect and initialize tables/default data
             
-            const user = await sqliteClient.getUser(sqliteClient.defaultUserId);
-            if (!user) {
-                throw new Error('Default user was not created during initialization.');
-            }
-            
-            console.log(`[DatabaseInitializer] Default user check successful, UID: ${user.uid}`);
-            return { success: true, user };
+            // No need to check for default user anymore
+            console.log(`[DatabaseInitializer] Database created successfully`);
+            return { success: true };
 
         } catch (error) {
             console.error('[DatabaseInitializer] Failed to create new database:', error);
@@ -121,14 +124,9 @@ class DatabaseInitializer {
         try {
             await sqliteClient.connect();
             
-            const user = await sqliteClient.getUser(sqliteClient.defaultUserId);
-            if (!user) {
-                console.warn('[DatabaseInitializer] Default user not found in existing DB, attempting recovery.');
-                throw new Error('Default user missing');
-            }
-            
-            console.log(`[DatabaseInitializer] Connection to existing DB successful for user: ${user.uid}`);
-            return { success: true, user };
+            // No need to check for default user anymore
+            console.log(`[DatabaseInitializer] Connection to existing DB successful`);
+            return { success: true };
 
         } catch (error) {
             console.error('[DatabaseInitializer] Failed to connect to existing database:', error);
@@ -147,7 +145,7 @@ class DatabaseInitializer {
                 await sqliteClient.initDefaultData();
             }
 
-            const presetTemplates = await sqliteClient.getPresets('default_user');
+            const presetTemplates = await sqliteClient.getPresetTemplates();
             if (!presetTemplates || presetTemplates.length === 0) {
                 console.log('[DatabaseInitializer] Preset templates missing - creating...');
                 await sqliteClient.initDefaultData();

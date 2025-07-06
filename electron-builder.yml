@@ -5,6 +5,9 @@ appId: com.pickle.glass
 
 # The user-facing application name
 productName: Glass
+directories:
+  output: out
+  buildResources: src/assets
 
 # Publish configuration for GitHub releases
 publish:
@@ -15,11 +18,15 @@ publish:
 
 # List of files to be included in the app package
 files:
-  - src/**/*
-  - package.json
-  - pickleglass_web/backend_node/**/*
-  - '!**/node_modules/electron/**'
-  - public/build/**/*
+  - src
+  - LICENSE
+  - "!**/*.ts"
+  - "!**/*.map"
+  - "!node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}"
+  - "!node_modules/*/{test,__tests__,tests,powered-test,example,examples}"
+  - "!node_modules/*.d.ts"
+  - "!node_modules/.bin"
+  - "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}"
 
 # Additional resources to be copied into the app's resources directory
 extraResources:

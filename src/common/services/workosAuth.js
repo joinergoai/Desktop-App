@@ -151,8 +151,15 @@ class WorkOSAuth {
      */
     async isAuthenticated() {
         try {
+            // First check the current user
             const tokens = await dataService.getWorkOSTokens();
-            return !!(tokens && tokens.workos_access_token);
+            if (tokens && tokens.workos_access_token) {
+                return true;
+            }
+            
+            // If not, check if there's any authenticated user
+            const authenticatedUser = await dataService.sqliteClient.getAuthenticatedWorkOSUser();
+            return !!(authenticatedUser && authenticatedUser.workos_access_token);
         } catch (error) {
             return false;
         }
@@ -163,13 +170,9 @@ class WorkOSAuth {
      */
     async logout() {
         try {
-            await dataService.saveWorkOSTokens({
-                access_token: null,
-                refresh_token: null,
-                expires_at: null,
-                workos_user_id: null
-            });
-            console.log('[WorkOS Auth] Logged out successfully');
+            // Clear all authenticated users from the database
+            await dataService.sqliteClient.clearAllAuthenticatedUsers();
+            console.log('[WorkOS Auth] Logged out successfully - all authenticated users cleared');
         } catch (error) {
             console.error('[WorkOS Auth] Error during logout:', error);
         }

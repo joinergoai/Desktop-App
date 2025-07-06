@@ -218,7 +218,7 @@ function base64ToFloat32Array(base64) {
 }
 
 async function queryLoginState() {
-    const user = await ipcRenderer.invoke('get-current-firebase-user');
+    const user = null; // Removed Firebase authentication
     return { user, isLoggedIn: !!user };
 }
 

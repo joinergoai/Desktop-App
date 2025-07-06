@@ -8,7 +8,7 @@ const { createOpenAiGenerativeClient, getOpenAiGenerativeModel } = require('../.
 const sqliteClient = require('../../common/services/sqliteClient');
 const dataService = require('../../common/services/dataService');
 
-const { isFirebaseLoggedIn, getCurrentFirebaseUser } = require('../../electron/windowManager.js');
+
 
 function getApiKey() {
     const { getStoredApiKey } = require('../../electron/windowManager.js');
@@ -129,7 +129,7 @@ Keep all points concise and build upon previous analysis if provided.`,
         if (!API_KEY) {
             throw new Error('No API key available');
         }
-        const loggedIn = isFirebaseLoggedIn(); // true ➜ vKey, false ➜ apiKey
+        const loggedIn = false; // Always use API key mode now
         const keyType = loggedIn ? 'vKey' : 'apiKey';
         console.log(`[LiveSummary] keyType: ${keyType}`);
 
@@ -361,7 +361,7 @@ function getCurrentSessionData() {
 // Conversation management functions
 async function initializeNewSession() {
     try {
-        const uid = dataService.currentUserId; // Get current user (local or firebase)
+        const uid = dataService.currentUserId; // Get current user
         currentSessionId = await sqliteClient.createSession(uid);
         console.log(`[DB] New session started in DB: ${currentSessionId}`);
 

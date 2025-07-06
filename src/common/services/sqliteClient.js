@@ -5,7 +5,6 @@ class SQLiteClient {
     constructor() {
         this.db = null;
         this.dbPath = null;
-        this.defaultUserId = 'default_user';
     }
 
     connect(dbPath) {
@@ -122,42 +121,33 @@ class SQLiteClient {
     async initDefaultData() {
         return new Promise((resolve, reject) => {
             const now = Math.floor(Date.now() / 1000);
-            const initUserQuery = `
-                INSERT OR IGNORE INTO users (uid, display_name, email, created_at)
-                VALUES (?, ?, ?, ?)
-            `;
+            // Remove default user creation - only authenticated users allowed
 
-            this.db.run(initUserQuery, [this.defaultUserId, 'Default User', 'contact@pickle.com', now], (err) => {
+            const defaultPresets = [
+                ['school', 'School', 'You are a school and lecture assistant. Your goal is to help the user, a student, understand academic material and answer questions.\n\nWhenever a question appears on the user\'s screen or is asked aloud, you provide a direct, step-by-step answer, showing all necessary reasoning or calculations.\n\nIf the user is watching a lecture or working through new material, you offer concise explanations of key concepts and clarify definitions as they come up.', 1],
+                ['meetings', 'Meetings', 'You are a meeting assistant. Your goal is to help the user capture key information during meetings and follow up effectively.\n\nYou help capture meeting notes, track action items, identify key decisions, and summarize important points discussed during meetings.', 1],
+                ['sales', 'Sales', 'You are a real-time AI sales assistant, and your goal is to help the user close deals during sales interactions.\n\nYou provide real-time sales support, suggest responses to objections, help identify customer needs, and recommend strategies to advance deals.', 1],
+                ['recruiting', 'Recruiting', 'You are a recruiting assistant. Your goal is to help the user interview candidates and evaluate talent effectively.\n\nYou help evaluate candidates, suggest interview questions, analyze responses, and provide insights about candidate fit for positions.', 1],
+                ['customer-support', 'Customer Support', 'You are a customer support assistant. Your goal is to help resolve customer issues efficiently and thoroughly.\n\nYou help diagnose customer problems, suggest solutions, provide step-by-step troubleshooting guidance, and ensure customer satisfaction.', 1],
+            ];
+
+            const stmt = this.db.prepare(`
+                INSERT OR IGNORE INTO prompt_presets (id, uid, title, prompt, is_default, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            `);
+
+            for (const preset of defaultPresets) {
+                // Use NULL for uid on default presets instead of a user ID
+                stmt.run(preset[0], null, preset[1], preset[2], preset[3], now);
+            }
+
+            stmt.finalize((err) => {
                 if (err) {
-                    console.error('Failed to initialize default user:', err);
+                    console.error('Failed to finalize preset statement:', err);
                     return reject(err);
                 }
-
-                const defaultPresets = [
-                    ['school', 'School', 'You are a school and lecture assistant. Your goal is to help the user, a student, understand academic material and answer questions.\n\nWhenever a question appears on the user\'s screen or is asked aloud, you provide a direct, step-by-step answer, showing all necessary reasoning or calculations.\n\nIf the user is watching a lecture or working through new material, you offer concise explanations of key concepts and clarify definitions as they come up.', 1],
-                    ['meetings', 'Meetings', 'You are a meeting assistant. Your goal is to help the user capture key information during meetings and follow up effectively.\n\nYou help capture meeting notes, track action items, identify key decisions, and summarize important points discussed during meetings.', 1],
-                    ['sales', 'Sales', 'You are a real-time AI sales assistant, and your goal is to help the user close deals during sales interactions.\n\nYou provide real-time sales support, suggest responses to objections, help identify customer needs, and recommend strategies to advance deals.', 1],
-                    ['recruiting', 'Recruiting', 'You are a recruiting assistant. Your goal is to help the user interview candidates and evaluate talent effectively.\n\nYou help evaluate candidates, suggest interview questions, analyze responses, and provide insights about candidate fit for positions.', 1],
-                    ['customer-support', 'Customer Support', 'You are a customer support assistant. Your goal is to help resolve customer issues efficiently and thoroughly.\n\nYou help diagnose customer problems, suggest solutions, provide step-by-step troubleshooting guidance, and ensure customer satisfaction.', 1],
-                ];
-
-                const stmt = this.db.prepare(`
-                    INSERT OR IGNORE INTO prompt_presets (id, uid, title, prompt, is_default, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                `);
-
-                for (const preset of defaultPresets) {
-                    stmt.run(preset[0], this.defaultUserId, preset[1], preset[2], preset[3], now);
-                }
-
-                stmt.finalize((err) => {
-                            if (err) {
-                        console.error('Failed to finalize preset statement:', err);
-                        return reject(err);
-                    }
-                    console.log('Default data initialized.');
-                    resolve();
-                });
+                console.log('Default presets initialized.');
+                resolve();
             });
         });
     }
@@ -167,20 +157,30 @@ class SQLiteClient {
             const { uid, display_name, email } = user;
             const now = Math.floor(Date.now() / 1000);
 
-            const query = `
-                INSERT INTO users (uid, display_name, email, created_at)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(uid) DO UPDATE SET 
-                    display_name=excluded.display_name, 
-                    email=excluded.email
-            `;
+            // Delete all existing users to ensure only one authenticated user
+            const deleteQuery = `DELETE FROM users`;
             
-            this.db.run(query, [uid, display_name, email, now], (err) => {
-                if (err) {
-                    console.error('Failed to find or create user in SQLite:', err);
-                    return reject(err);
+            this.db.run(deleteQuery, [], (deleteErr) => {
+                if (deleteErr) {
+                    console.error('Failed to clean up users:', deleteErr);
+                    return reject(deleteErr);
                 }
-                this.getUser(uid).then(resolve).catch(reject);
+                
+                console.log('[SQLiteClient] Cleaned up existing users, creating new user:', uid);
+                
+                // Now insert the new user
+                const insertQuery = `
+                    INSERT INTO users (uid, display_name, email, created_at)
+                    VALUES (?, ?, ?, ?)
+                `;
+                
+                this.db.run(insertQuery, [uid, display_name, email, now], (err) => {
+                    if (err) {
+                        console.error('Failed to create user in SQLite:', err);
+                        return reject(err);
+                    }
+                    this.getUser(uid).then(resolve).catch(reject);
+                });
             });
         });
     }
@@ -193,8 +193,25 @@ class SQLiteClient {
             });
         });
     }
+    
+    async getAllUsers() {
+        return new Promise((resolve, reject) => {
+            this.db.all('SELECT uid, display_name, email, workos_access_token IS NOT NULL as is_authenticated FROM users', [], (err, rows) => {
+                if (err) {
+                    console.error('Failed to get all users:', err);
+                    reject(err);
+                } else {
+                    console.log('[SQLiteClient] Current users in database:', rows);
+                    resolve(rows);
+                }
+            });
+        });
+    }
 
-    async saveApiKey(apiKey, uid = this.defaultUserId) {
+    async saveApiKey(apiKey, uid) {
+        if (!uid) {
+            return Promise.reject(new Error('User ID is required to save API key'));
+        }
         return new Promise((resolve, reject) => {
             this.db.run(
                 'UPDATE users SET api_key = ? WHERE uid = ?',
@@ -251,12 +268,52 @@ class SQLiteClient {
             );
         });
     }
+    
+    async getAuthenticatedWorkOSUser() {
+        return new Promise((resolve, reject) => {
+            // Find the user with valid WorkOS tokens
+            this.db.get(
+                `SELECT uid, display_name, email, workos_access_token, workos_refresh_token, workos_expires_at, workos_user_id 
+                 FROM users 
+                 WHERE workos_access_token IS NOT NULL 
+                 ORDER BY workos_expires_at DESC 
+                 LIMIT 1`,
+                [],
+                (err, row) => {
+                    if (err) {
+                        reject(err);
+                    } else {
+                        resolve(row || null);
+                    }
+                }
+            );
+        });
+    }
+    
+    async clearAllAuthenticatedUsers() {
+        return new Promise((resolve, reject) => {
+            console.log('[SQLiteClient] Clearing all authenticated users...');
+            
+            // Delete all users
+            const deleteQuery = `DELETE FROM users`;
+            
+            this.db.run(deleteQuery, [], function(err) {
+                if (err) {
+                    console.error('Failed to clear authenticated users:', err);
+                    reject(err);
+                } else {
+                    console.log(`[SQLiteClient] Cleared ${this.changes} user(s)`);
+                    resolve({ changes: this.changes });
+                }
+            });
+        });
+    }
 
     async getPresets(uid) {
         return new Promise((resolve, reject) => {
             const query = `
                 SELECT * FROM prompt_presets 
-                WHERE uid = ? OR is_default = 1 
+                WHERE uid = ? OR uid IS NULL OR is_default = 1 
                 ORDER BY is_default DESC, title ASC
             `;
             this.db.all(query, [uid], (err, rows) => {

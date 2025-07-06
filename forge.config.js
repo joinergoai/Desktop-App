@@ -2,42 +2,53 @@ const { FusesPlugin } = require('@electron-forge/plugin-fuses');
 const { FuseV1Options, FuseVersion } = require('@electron/fuses');
 const { notarizeApp } = require('./notarize');
 
-module.exports = {
-    packagerConfig: {
-        asar: {
-            unpack:
-                '**/*.node,**/*.dylib,' +
-                '**/node_modules/{sharp,@img}/**/*'
-        },
-        extraResource: ['./src/assets/SystemAudioDump', './pickleglass_web/out'],
-        name: 'Glass',
-        icon: 'src/assets/logo',
-        appBundleId: 'com.pickle.glass',
-        protocols: [
-            {
-                name: 'PickleGlass Protocol',
-                schemes: ['pickleglass']
-            }
-        ],
-        asarUnpack: [
-            "**/*.node",
-            "**/*.dylib",
-            "node_modules/@img/sharp-darwin-arm64/**",
-            "node_modules/@img/sharp-libvips-darwin-arm64/**"
-        ],
-        osxSign: {
-            identity: process.env.APPLE_SIGNING_IDENTITY,
-            'hardened-runtime': true,
-            entitlements: 'entitlements.plist',
-            'entitlements-inherit': 'entitlements.plist',
-        },
-        osxNotarize: {
-            tool: 'notarytool',
-            appleId: process.env.APPLE_ID,
-            appleIdPassword: process.env.APPLE_ID_PASSWORD,
-            teamId: process.env.APPLE_TEAM_ID
-        }
+// Build packager config conditionally
+const packagerConfig = {
+    asar: {
+        unpack:
+            '**/*.node,**/*.dylib,' +
+            '**/node_modules/{sharp,@img}/**/*'
     },
+    extraResource: ['./src/assets/SystemAudioDump'],
+    name: 'Glass',
+    icon: 'src/assets/logo',
+    appBundleId: 'com.pickle.glass',
+    protocols: [
+        {
+            name: 'PickleGlass Protocol',
+            schemes: ['pickleglass']
+        }
+    ],
+    asarUnpack: [
+        "**/*.node",
+        "**/*.dylib",
+        "node_modules/@img/sharp-darwin-arm64/**",
+        "node_modules/@img/sharp-libvips-darwin-arm64/**"
+    ],
+};
+
+// Only add osxSign if we have the identity
+if (process.env.APPLE_IDENTITY) {
+    packagerConfig.osxSign = {
+        identity: process.env.APPLE_IDENTITY,
+        'hardened-runtime': true,
+        entitlements: 'entitlements.plist',
+        'entitlements-inherit': 'entitlements.plist',
+    };
+}
+
+// Only add osxNotarize if we have the required credentials
+if (process.env.APPLE_ID && process.env.APPLE_PASSWORD && process.env.APPLE_TEAM_ID) {
+    packagerConfig.osxNotarize = {
+        tool: 'notarytool',
+        appleId: process.env.APPLE_ID,
+        appleIdPassword: process.env.APPLE_PASSWORD,
+        teamId: process.env.APPLE_TEAM_ID
+    };
+}
+
+module.exports = {
+    packagerConfig,
     rebuildConfig: {},
     makers: [
         {
@@ -65,7 +76,10 @@ module.exports = {
     ],
     hooks: {
         afterSign: async (context, forgeConfig, platform, arch, appPath) => {
-            await notarizeApp(context, forgeConfig, platform, arch, appPath);
+            // Only notarize if we have the credentials
+            if (process.env.APPLE_ID && process.env.APPLE_PASSWORD) {
+                await notarizeApp(context, forgeConfig, platform, arch, appPath);
+            }
         },
     },
     plugins: [

@@ -5,7 +5,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('ipcRenderer', {
   send: (channel, data) => {
-    const validChannels = ['set-current-user', 'firebase-auth-success'];
+    const validChannels = ['set-current-user'];
     if (validChannels.includes(channel)) {
       ipcRenderer.send(channel, data);
     }

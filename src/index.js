@@ -18,12 +18,9 @@ const databaseInitializer = require('./common/services/databaseInitializer');
 const dataService = require('./common/services/dataService');
 const path = require('node:path');
 const { Deeplink } = require('electron-deeplink');
-const express = require('express');
 const fetch = require('node-fetch');
 const { autoUpdater } = require('electron-updater');
 const { env } = require('node:process');
-
-let WEB_PORT = 3000;
 
 const openaiSessionRef = { current: null };
 let deeplink = null; // Initialize as null
@@ -76,7 +73,7 @@ app.whenReady().then(async () => {
             const { windowPool } = require('./electron/windowManager');
             if (windowPool) {
                 const header = windowPool.get('header');
-                if (header) {
+                if (header && !header.isDestroyed()) {
                     if (header.isMinimized()) header.restore();
                     header.focus();
                     return;
@@ -86,8 +83,10 @@ app.whenReady().then(async () => {
             const windows = BrowserWindow.getAllWindows();
             if (windows.length > 0) {
                 const mainWindow = windows[0];
-                if (mainWindow.isMinimized()) mainWindow.restore();
-                mainWindow.focus();
+                if (!mainWindow.isDestroyed()) {
+                    if (mainWindow.isMinimized()) mainWindow.restore();
+                    mainWindow.focus();
+                }
             }
         });
     }
@@ -98,9 +97,54 @@ app.whenReady().then(async () => {
     } else {
         console.log('>>> [index.js] Database initialized successfully');
     }
-
-    WEB_PORT = await startWebStack();
-    console.log('Web front-end listening on', WEB_PORT);
+    
+    // Check for existing WorkOS authentication on startup
+    try {
+        // Log all users before restoration
+        if (dataService.sqliteClient) {
+            const allUsers = await dataService.sqliteClient.getAllUsers();
+            console.log('[index.js] Users in database at startup:', allUsers);
+        }
+        
+        const restored = await dataService.restoreAuthenticatedUser();
+        if (restored) {
+            console.log('[index.js] Successfully restored authenticated user session');
+            
+            // Log all users after restoration to ensure cleanup worked
+            if (dataService.sqliteClient) {
+                const allUsersAfter = await dataService.sqliteClient.getAllUsers();
+                console.log('[index.js] Users in database after restoration:', allUsersAfter);
+            }
+            
+            // Emit a global event that windows can listen for
+            app.once('browser-window-created', () => {
+                setTimeout(async () => {
+                    const user = await dataService.sqliteClient.getUser(dataService.currentUserId);
+                    if (user) {
+                        const { windowPool } = require('./electron/windowManager');
+                        windowPool.forEach(win => {
+                            if (win && !win.isDestroyed()) {
+                                win.webContents.send('authenticated-user-restored', {
+                                    uid: user.uid,
+                                    display_name: user.display_name,
+                                    email: user.email
+                                });
+                                win.webContents.send('user-changed', {
+                                    uid: user.uid,
+                                    display_name: user.display_name,
+                                    email: user.email
+                                });
+                            }
+                        });
+                    }
+                }, 500);
+            });
+        } else {
+            console.log('[index.js] No authenticated user found, using default user');
+        }
+    } catch (error) {
+        console.error('[index.js] Error restoring authenticated user on startup:', error);
+    }
     
     setupLiveSummaryIpcHandlers(openaiSessionRef);
     setupGeneralIpcHandlers();
@@ -160,7 +204,9 @@ function setupGeneralIpcHandlers() {
         try {
             await dataService.saveApiKey(apiKey);
             BrowserWindow.getAllWindows().forEach(win => {
-                win.webContents.send('api-key-updated');
+                if (!win.isDestroyed()) {
+                    win.webContents.send('api-key-updated');
+                }
             });
             return { success: true };
         } catch (error) {
@@ -193,9 +239,37 @@ function setupGeneralIpcHandlers() {
 
     ipcMain.handle('check-workos-auth', async () => {
         try {
-            const workosAuth = require('./common/services/workosAuth');
-            const isAuthenticated = await workosAuth.isAuthenticated();
-            return { isAuthenticated };
+            // First check current user
+            const currentUser = await dataService.sqliteClient.getUser(dataService.currentUserId);
+            if (currentUser && currentUser.workos_access_token) {
+                return { 
+                    isAuthenticated: true,
+                    user: {
+                        uid: currentUser.uid,
+                        email: currentUser.email,
+                        display_name: currentUser.display_name
+                    }
+                };
+            }
+            
+            // If not, check for any authenticated user
+            const authenticatedUser = await dataService.sqliteClient.getAuthenticatedWorkOSUser();
+            if (authenticatedUser && authenticatedUser.workos_access_token) {
+                // Switch to this user
+                dataService.setCurrentUser(authenticatedUser.uid);
+                console.log('[IPC] Found authenticated user, setting as current:', authenticatedUser.email);
+                
+                return { 
+                    isAuthenticated: true,
+                    user: {
+                        uid: authenticatedUser.uid,
+                        email: authenticatedUser.email,
+                        display_name: authenticatedUser.display_name
+                    }
+                };
+            }
+            
+            return { isAuthenticated: false };
         } catch (error) {
             console.error('[IPC] Failed to check WorkOS auth:', error);
             return { isAuthenticated: false };
@@ -207,18 +281,6 @@ function setupGeneralIpcHandlers() {
         dataService.setCurrentUser(uid);
     });
 
-    ipcMain.handle('start-firebase-auth', async () => {
-        try {
-            const authUrl = `http://localhost:${WEB_PORT}/login?mode=electron`;
-            console.log(`[Auth] Opening Firebase auth URL in browser: ${authUrl}`);
-            await shell.openExternal(authUrl);
-            return { success: true };
-        } catch (error) {
-            console.error('[Auth] Failed to open Firebase auth URL:', error);
-            return { success: false, error: error.message };
-        }
-    });
-    
     ipcMain.handle('start-workos-auth', async () => {
         try {
             // Get auth URL from your backend service
@@ -244,33 +306,45 @@ function setupGeneralIpcHandlers() {
             return { success: false, error: error.message };
         }
     });
-
-    ipcMain.on('firebase-auth-success', async (event, firebaseUser) => {
-        console.log('[IPC] firebase-auth-success:', firebaseUser.uid);
+    
+    ipcMain.handle('logout-workos', async () => {
         try {
-            await dataService.findOrCreateUser(firebaseUser);
-            dataService.setCurrentUser(firebaseUser.uid);
+            // Log users before logout
+            if (dataService.sqliteClient) {
+                const usersBefore = await dataService.sqliteClient.getAllUsers();
+                console.log('[IPC] Users before logout:', usersBefore);
+            }
             
+            const workosAuth = require('./common/services/workosAuth');
+            await workosAuth.logout();
+            dataService.setCurrentUser(null);  // No current user after logout
+            
+            // Log users after logout
+            if (dataService.sqliteClient) {
+                const usersAfter = await dataService.sqliteClient.getAllUsers();
+                console.log('[IPC] Users after logout:', usersAfter);
+            }
+            
+            // Notify all windows
             BrowserWindow.getAllWindows().forEach(win => {
-                if (win !== event.sender.getOwnerBrowserWindow()) {
-                    win.webContents.send('user-changed', firebaseUser);
+                if (!win.isDestroyed()) {
+                    win.webContents.send('request-logout');
                 }
             });
+            
+            return { success: true };
         } catch (error) {
-            console.error('[IPC] Failed to handle firebase-auth-success:', error);
+            console.error('[IPC] Failed to logout WorkOS:', error);
+            return { success: false, error: error.message };
         }
     });
 
     ipcMain.handle('get-api-url', () => {
-        return process.env.pickleglass_API_URL || 'http://localhost:9001';
-    });
-
-    ipcMain.handle('get-web-url', () => {
-        return process.env.pickleglass_WEB_URL || 'http://localhost:3000';
+        return process.env.BACKEND_URL;
     });
 
     ipcMain.on('get-api-url-sync', (event) => {
-        event.returnValue = process.env.pickleglass_API_URL || 'http://localhost:9001';
+        event.returnValue = process.env.BACKEND_URL;
     });
 
     ipcMain.handle('get-database-status', async () => {
@@ -283,25 +357,48 @@ function setupGeneralIpcHandlers() {
 
     ipcMain.handle('get-current-user', async () => {
         try {
-            const user = await dataService.sqliteClient.getUser(dataService.currentUserId);
+            // First try to get the current user
+            let user = dataService.currentUserId ? await dataService.sqliteClient.getUser(dataService.currentUserId) : null;
+            
+            // If no current user, check if there's any authenticated user
+            if (!user) {
+                const authenticatedUser = await dataService.sqliteClient.getAuthenticatedWorkOSUser();
+                if (authenticatedUser) {
+                    // Switch to the authenticated user
+                    dataService.setCurrentUser(authenticatedUser.uid);
+                    user = authenticatedUser;
+                    console.log('[IPC] Switched to authenticated user:', user.email);
+                }
+            }
+            
             if (user) {
-            return {
+                // Ensure the user has valid tokens before considering them authenticated
+                const hasValidTokens = user.workos_access_token && user.workos_expires_at > Date.now();
+                return {
                     id: user.uid,
                     name: user.display_name,
-                    isAuthenticated: user.uid !== 'default_user'
-            };
+                    email: user.email,
+                    isAuthenticated: hasValidTokens
+                };
             }
-            throw new Error('User not found in DataService');
-        } catch (error) {
-            console.error('Failed to get current user via DataService:', error);
+            
+            // Return guest user if no authenticated user
             return {
-                id: 'default_user',
-                name: 'Default User',
+                id: 'guest',
+                name: 'Guest User',
+                email: 'Not signed in',
+                isAuthenticated: false
+            };
+        } catch (error) {
+            console.error('Failed to get current user:', error);
+            return {
+                id: 'guest',
+                name: 'Guest User',
+                email: 'Not signed in',
                 isAuthenticated: false
             };
         }
     });
-
 }
 
 async function handleCustomUrl(url) {
@@ -315,10 +412,6 @@ async function handleCustomUrl(url) {
         console.log('[Custom URL] Action:', action, 'Params:', params);
 
         switch (action) {
-            case 'login':
-            case 'auth-success':
-                await handleFirebaseAuthCallback(params);
-                break;
             case 'workos-auth':
                 await handleWorkOSAuthCallback(params);
                 break;
@@ -328,131 +421,14 @@ async function handleCustomUrl(url) {
             default:
                 const { windowPool } = require('./electron/windowManager');
                 const header = windowPool.get('header');
-                if (header) {
+                if (header && !header.isDestroyed()) {
                     if (header.isMinimized()) header.restore();
                     header.focus();
-                    
-                    const targetUrl = `http://localhost:${WEB_PORT}/${action}`;
-                    console.log(`[Custom URL] Navigating webview to: ${targetUrl}`);
-                    header.webContents.loadURL(targetUrl);
                 }
         }
 
     } catch (error) {
         console.error('[Custom URL] Error parsing URL:', error);
-    }
-}
-
-async function handleFirebaseAuthCallback(params) {
-    const { token: idToken } = params;
-
-    if (!idToken) {
-        console.error('[Auth] Firebase auth callback is missing ID token.');
-        const { windowPool } = require('./electron/windowManager');
-        const header = windowPool.get('header');
-        if (header) {
-            header.webContents.send('login-successful', {
-                error: 'authentication_failed',
-                message: 'ID token not provided in deep link.'
-            });
-        }
-        return;
-    }
-
-    console.log('[Auth] Received ID token from deep link, exchanging for custom token...');
-
-    try {
-        const functionUrl = 'https://us-west1-pickle-3651a.cloudfunctions.net/pickleGlassAuthCallback';
-        const response = await fetch(functionUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token: idToken })
-        });
-
-        const data = await response.json();
-
-
-
-        if (!response.ok || !data.success) {
-            throw new Error(data.error || 'Failed to exchange token.');
-        }
-
-        const { customToken, user } = data;
-        console.log('[Auth] Successfully received custom token for user:', user.uid);
-
-        const firebaseUser = {
-            uid: user.uid,
-            email: user.email || 'no-email@example.com',
-            displayName: user.name || 'User',
-            photoURL: user.picture
-        };
-
-        await dataService.findOrCreateUser(firebaseUser);
-        dataService.setCurrentUser(user.uid);
-        console.log('[Auth] User data synced with local DB.');
-
-        // if (firebaseUser.email && idToken) {
-        //     try {
-        //         const { getVirtualKeyByEmail, setApiKey } = require('./electron/windowManager');
-        //         console.log('[Auth] Fetching virtual key for:', firebaseUser.email);
-        //         const vKey = await getVirtualKeyByEmail(firebaseUser.email, idToken);
-        //         console.log('[Auth] Virtual key fetched successfully');
-                
-        //         await setApiKey(vKey);
-        //         console.log('[Auth] Virtual key saved successfully');
-                
-        //         const { setCurrentFirebaseUser } = require('./electron/windowManager');
-        //         setCurrentFirebaseUser(firebaseUser);
-                
-        //         const { windowPool } = require('./electron/windowManager');
-        //         windowPool.forEach(win => {
-        //             if (win && !win.isDestroyed()) {
-        //                 win.webContents.send('api-key-updated');
-        //                 win.webContents.send('firebase-user-updated', firebaseUser);
-        //             }
-        //         });
-        //     } catch (error) {
-        //         console.error('[Auth] Virtual key fetch failed:', error);
-        //     }
-        // }
-
-        const { windowPool } = require('./electron/windowManager');
-        const header = windowPool.get('header');
-
-        if (header) {
-            if (header.isMinimized()) header.restore();
-            header.focus();
-            
-            console.log('[Auth] Sending custom token to renderer for sign-in.');
-            header.webContents.send('login-successful', { 
-                customToken: customToken, 
-                user: firebaseUser,
-                success: true 
-            });
-
-            BrowserWindow.getAllWindows().forEach(win => {
-                if (win !== header) {
-                    win.webContents.send('user-changed', firebaseUser);
-                }
-            });
-
-            console.log('[Auth] Firebase authentication completed successfully');
-
-        } else {
-            console.error('[Auth] Header window not found after getting custom token.');
-        }
-        
-    } catch (error) {
-        console.error('[Auth] Error during custom token exchange:', error);
-        
-        const { windowPool } = require('./electron/windowManager');
-        const header = windowPool.get('header');
-        if (header) {
-            header.webContents.send('login-successful', { 
-                error: 'authentication_failed',
-                message: error.message 
-            });
-        }
     }
 }
 
@@ -463,7 +439,7 @@ async function handleWorkOSAuthCallback(params) {
         console.error('[WorkOS Auth] Authorization code missing');
         const { windowPool } = require('./electron/windowManager');
         const header = windowPool.get('header');
-        if (header) {
+        if (header && !header.isDestroyed()) {
             header.webContents.send('workos-auth-failed', { 
                 error: 'authorization_code_missing',
                 message: 'Authorization code not provided in deep link.'
@@ -528,6 +504,12 @@ async function handleWorkOSAuthCallback(params) {
 
         console.log('[WorkOS Auth] User authenticated:', user.email);
 
+        // Log users before authentication
+        if (dataService.sqliteClient) {
+            const usersBefore = await dataService.sqliteClient.getAllUsers();
+            console.log('[WorkOS Auth] Users before authentication:', usersBefore);
+        }
+
         // Create/update user in SQLite
         const workosUser = {
             uid: user.id,
@@ -537,6 +519,10 @@ async function handleWorkOSAuthCallback(params) {
 
         await dataService.findOrCreateUser(workosUser);
         
+        // Set current user BEFORE saving tokens
+        dataService.setCurrentUser(user.id);
+        console.log('[WorkOS Auth] Current user set to:', user.id);
+        
         // Store tokens with expiry
         await dataService.saveWorkOSTokens({
             access_token: access_token,
@@ -545,8 +531,13 @@ async function handleWorkOSAuthCallback(params) {
             workos_user_id: user.id
         });
 
-        dataService.setCurrentUser(user.id);
         console.log('[WorkOS Auth] User data synced with local DB.');
+        
+        // Log users after authentication
+        if (dataService.sqliteClient) {
+            const usersAfter = await dataService.sqliteClient.getAllUsers();
+            console.log('[WorkOS Auth] Users after authentication:', usersAfter);
+        }
 
         // Notify all windows
         const { windowPool } = require('./electron/windowManager');
@@ -561,7 +552,7 @@ async function handleWorkOSAuthCallback(params) {
         });
 
         const header = windowPool.get('header');
-        if (header) {
+        if (header && !header.isDestroyed()) {
             if (header.isMinimized()) header.restore();
             header.focus();
         }
@@ -573,7 +564,7 @@ async function handleWorkOSAuthCallback(params) {
         
         const { windowPool } = require('./electron/windowManager');
         const header = windowPool.get('header');
-        if (header) {
+        if (header && !header.isDestroyed()) {
             header.webContents.send('workos-auth-failed', { 
                 error: 'authentication_failed',
                 message: error.message 
@@ -588,132 +579,22 @@ function handlePersonalizeFromUrl(params) {
     const { windowPool } = require('./electron/windowManager');
     const header = windowPool.get('header');
     
-    if (header) {
+    if (header && !header.isDestroyed()) {
         if (header.isMinimized()) header.restore();
         header.focus();
         
-        const personalizeUrl = `http://localhost:${WEB_PORT}/settings`;
-        console.log(`[Custom URL] Navigating to personalize page: ${personalizeUrl}`);
-        header.webContents.loadURL(personalizeUrl);
-        
         BrowserWindow.getAllWindows().forEach(win => {
-            win.webContents.send('enter-personalize-mode', {
-                message: 'Personalization mode activated',
-                params: params
-            });
+            if (!win.isDestroyed()) {
+                win.webContents.send('enter-personalize-mode', {
+                    message: 'Personalization mode activated',
+                    params: params
+                });
+            }
         });
     } else {
         console.error('[Custom URL] Header window not found for personalize');
     }
 }
-
-
-async function startWebStack() {
-  console.log('NODE_ENV =', process.env.NODE_ENV); 
-  const isDev = !app.isPackaged;
-
-  const getAvailablePort = () => {
-    return new Promise((resolve, reject) => {
-      const server = require('net').createServer();
-      server.listen(0, (err) => {
-        if (err) reject(err);
-        const port = server.address().port;
-        server.close(() => resolve(port));
-      });
-    });
-  };
-
-  const apiPort = await getAvailablePort();
-  const frontendPort = await getAvailablePort();
-
-  console.log(`🔧 Allocated ports: API=${apiPort}, Frontend=${frontendPort}`);
-
-  process.env.pickleglass_API_PORT = apiPort.toString();
-  process.env.pickleglass_API_URL = `http://localhost:${apiPort}`;
-  process.env.pickleglass_WEB_PORT = frontendPort.toString();
-  process.env.pickleglass_WEB_URL = `http://localhost:${frontendPort}`;
-
-  console.log(`🌍 Environment variables set:`, {
-    pickleglass_API_URL: process.env.pickleglass_API_URL,
-    pickleglass_WEB_URL: process.env.pickleglass_WEB_URL
-  });
-
-  const createBackendApp = require('../pickleglass_web/backend_node');
-  const nodeApi = createBackendApp();
-
-  const staticDir = app.isPackaged
-    ? path.join(process.resourcesPath, 'out')
-    : path.join(__dirname, '..', 'pickleglass_web', 'out');
-
-  const fs = require('fs');
-
-  if (!fs.existsSync(staticDir)) {
-    console.error(`============================================================`);
-    console.error(`[ERROR] Frontend build directory not found!`);
-    console.error(`Path: ${staticDir}`);
-    console.error(`Please run 'npm run build' inside the 'pickleglass_web' directory first.`);
-    console.error(`============================================================`);
-    app.quit();
-    return;
-  }
-
-  const runtimeConfig = {
-    API_URL: `http://localhost:${apiPort}`,
-    WEB_URL: `http://localhost:${frontendPort}`,
-    timestamp: Date.now()
-  };
-  
-  // 쓰기 가능한 임시 폴더에 런타임 설정 파일 생성
-  const tempDir = app.getPath('temp');
-  const configPath = path.join(tempDir, 'runtime-config.json');
-  fs.writeFileSync(configPath, JSON.stringify(runtimeConfig, null, 2));
-  console.log(`📝 Runtime config created in temp location: ${configPath}`);
-
-  const frontSrv = express();
-  
-  // 프론트엔드에서 /runtime-config.json을 요청하면 임시 폴더의 파일을 제공
-  frontSrv.get('/runtime-config.json', (req, res) => {
-    res.sendFile(configPath);
-  });
-
-  frontSrv.use((req, res, next) => {
-    if (req.path.indexOf('.') === -1 && req.path !== '/') {
-      const htmlPath = path.join(staticDir, req.path + '.html');
-      if (fs.existsSync(htmlPath)) {
-        return res.sendFile(htmlPath);
-      }
-    }
-    next();
-  });
-  
-  frontSrv.use(express.static(staticDir));
-  
-  const frontendServer = await new Promise((resolve, reject) => {
-    const server = frontSrv.listen(frontendPort, '127.0.0.1', () => resolve(server));
-    server.on('error', reject);
-    app.once('before-quit', () => server.close());
-  });
-
-  console.log(`✅ Frontend server started on http://localhost:${frontendPort}`);
-
-  const apiSrv = express();
-  apiSrv.use(nodeApi);
-
-  const apiServer = await new Promise((resolve, reject) => {
-    const server = apiSrv.listen(apiPort, '127.0.0.1', () => resolve(server));
-    server.on('error', reject);
-    app.once('before-quit', () => server.close());
-  });
-
-  console.log(`✅ API server started on http://localhost:${apiPort}`);
-
-  console.log(`🚀 All services ready:`);
-  console.log(`   Frontend: http://localhost:${frontendPort}`);
-  console.log(`   API:      http://localhost:${apiPort}`);
-
-  return frontendPort;
-}
-
 // Auto-update initialization
 function initAutoUpdater() {
     try {

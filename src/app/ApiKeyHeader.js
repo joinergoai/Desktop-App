@@ -412,8 +412,6 @@ export class ApiKeyHeader extends LitElement {
         this.classList.add('sliding-out');
     }
 
-
-
     handleUseWorkOS(e) {
         e.preventDefault();
         if (this.wasJustDragged) return;
@@ -467,12 +465,13 @@ export class ApiKeyHeader extends LitElement {
                         <path d="M1 1L9 9M9 1L1 9" stroke="currentColor" stroke-width="1.2" />
                     </svg>
                 </button>
-                <h1 class="title">Welcome to Ergo</h1>
+                <h1 class="title">Welcome to Ergo Copilot</h1>
 
                 <div class="form-content">
-                    <div class="error-message">${this.errorMessage}</div>
                     
-                    <button class="action-button primary" @click=${this.handleUseWorkOS}>Sign into Ergo</button>
+                    <button class="action-button primary" @click=${this.handleUseWorkOS}>
+                        ${this.isLoading ? 'Signing in...' : 'Sign into Ergo'}
+                    </button>
                 </div>
             </div>
         `;

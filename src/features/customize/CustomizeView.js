@@ -10,8 +10,8 @@ export class CustomizeView extends LitElement {
 
         :host {
             display: block;
-            width: 180px;
-            min-height: 180px;
+            width: 200px;
+            min-height: 200px;
             color: white;
         }
 
@@ -224,16 +224,7 @@ export class CustomizeView extends LitElement {
             border-top: 1px solid rgba(255, 255, 255, 0.1);
         }
 
-        .api-key-section input {
-            width: 100%;
-            background: rgba(0,0,0,0.2);
-            border: 1px solid rgba(255,255,255,0.2);
-            color: white;
-            border-radius: 4px;
-            padding: 4px;
-            font-size: 11px;
-            margin-bottom: 4px;
-        }
+
 
     `;
 
@@ -260,10 +251,8 @@ export class CustomizeView extends LitElement {
         presetTemplates: { type: Array },
         currentUser: { type: String },
         isContentProtectionOn: { type: Boolean },
-        firebaseUser: { type: Object, state: true },
-        apiKey: { type: String, state: true },
         isLoading: { type: Boolean },
-        activeTab: { type: String },
+        userEmail: { type: String, state: true },
     };
 
     constructor() {
@@ -282,12 +271,10 @@ export class CustomizeView extends LitElement {
         this.fontSize = 14;
         this.userPresets = [];
         this.presetTemplates = [];
-        this.currentUser = 'default_user';
-        this.firebaseUser = null;
-        this.apiKey = null;
+        this.currentUser = null;
         this.isContentProtectionOn = true;
         this.isLoading = false;
-        this.activeTab = 'prompts';
+        this.userEmail = '';
 
         this.loadKeybinds();
         this.loadRateLimitSettings();
@@ -296,10 +283,9 @@ export class CustomizeView extends LitElement {
         this.loadFontSize();
         this.loadContentProtectionSettings();
         this.checkContentProtectionStatus();
-        this.getApiKeyFromStorage();
     }
 
-    connectedCallback() {
+    async connectedCallback() {
         super.connectedCallback();
         
         this.loadLayoutMode();
@@ -313,7 +299,7 @@ export class CustomizeView extends LitElement {
 
         setTimeout(() => this.updateScrollHeight(), 100);
 
-        this.addEventListener('mouseenter', () => {
+        this.addEventListener('mouseenter', async () => {
             if (window.require) {
                 window.require('electron').ipcRenderer.send('cancel-hide-window', 'settings');
             }
@@ -328,49 +314,49 @@ export class CustomizeView extends LitElement {
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
             
-            ipcRenderer.on('firebase-user-updated', (event, user) => {
-                this.firebaseUser = user;
-                
-                if (!user) {
-                    this.apiKey = null;
+            // Get current user info (we know they're authenticated if they can see this)
+            try {
+                const user = await ipcRenderer.invoke('get-current-user');
+                console.log('[CustomizeView] Current user:', user);
+                this.userEmail = user.email || 'Authenticated User';
+            } catch (error) {
+                console.error('[CustomizeView] Failed to get current user:', error);
+                this.userEmail = 'Authenticated User';
+            }
+            
+            ipcRenderer.on('user-changed', (event, user) => {
+                console.log('[CustomizeView] Received user-changed:', user);
+                this.userEmail = user.email || 'Authenticated User';
+                this.requestUpdate();
+            });
+            
+            ipcRenderer.on('authenticated-user-restored', (event, user) => {
+                console.log('[CustomizeView] Authenticated user restored:', user);
+                this.userEmail = user.email || 'Authenticated User';
+                this.requestUpdate();
+            });
+            
+            ipcRenderer.on('workos-auth-success', (event, payload) => {
+                console.log('[CustomizeView] WorkOS auth success');
+                if (payload && payload.user) {
+                    this.userEmail = payload.user.email || 'Authenticated User';
                 }
-                
-                this.requestUpdate();
-            });
-
-            ipcRenderer.on('user-changed', (event, firebaseUser) => {
-                console.log('[CustomizeView] Received user-changed:', firebaseUser);
-                this.firebaseUser = {
-                    uid: firebaseUser.uid,
-                    email: firebaseUser.email,
-                    name: firebaseUser.displayName,
-                    photoURL: firebaseUser.photoURL,
-                };
-                this.requestUpdate();
-            });
-
-            ipcRenderer.on('api-key-validated', (event, newApiKey) => {
-                console.log('[CustomizeView] Received api-key-validated, updating state.');
-                this.apiKey = newApiKey;
                 this.requestUpdate();
             });
             
-            ipcRenderer.on('api-key-updated', () => {
-                console.log('[CustomizeView] Received api-key-updated, refreshing state.');
-                this.getApiKeyFromStorage();
-            });
-            
-            ipcRenderer.on('api-key-removed', () => {
-                console.log('[CustomizeView] Received api-key-removed, clearing state.');
-                this.apiKey = null;
-                this.requestUpdate();
-            });
-
-            this.loadInitialFirebaseUser();
-            
-            ipcRenderer.invoke('get-current-api-key').then(key => {
-                this.apiKey = key;
-                this.requestUpdate();
+            // Listen for window show events to refresh user info
+            ipcRenderer.on('window-show-animation', async () => {
+                console.log('[CustomizeView] Window shown, refreshing user info');
+                try {
+                    const user = await ipcRenderer.invoke('get-current-user');
+                    if (user && user.email !== this.userEmail) {
+                        console.log('[CustomizeView] Updated user on window show:', user);
+                        this.userEmail = user.email || 'Authenticated User';
+                        this.requestUpdate();
+                    }
+                } catch (error) {
+                    console.error('[CustomizeView] Failed to refresh user on window show:', error);
+                }
             });
         }
     }
@@ -383,11 +369,10 @@ export class CustomizeView extends LitElement {
 
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
-            ipcRenderer.removeAllListeners('firebase-user-updated');
             ipcRenderer.removeAllListeners('user-changed');
-            ipcRenderer.removeAllListeners('api-key-validated');
-            ipcRenderer.removeAllListeners('api-key-updated');
-            ipcRenderer.removeAllListeners('api-key-removed');
+            ipcRenderer.removeAllListeners('authenticated-user-restored');
+            ipcRenderer.removeAllListeners('workos-auth-success');
+            ipcRenderer.removeAllListeners('window-show-animation');
         }
     }
 
@@ -469,18 +454,6 @@ export class CustomizeView extends LitElement {
             presentation: 'Presentation',
             negotiation: 'Negotiation',
         };
-    }
-
-    handleProfileSelect(e) {
-        this.selectedProfile = e.target.value;
-        localStorage.setItem('selectedProfile', this.selectedProfile);
-        this.onProfileChange(this.selectedProfile);
-    }
-
-    handleLanguageSelect(e) {
-        this.selectedLanguage = e.target.value;
-        localStorage.setItem('selectedLanguage', this.selectedLanguage);
-        this.onLanguageChange(this.selectedLanguage);
     }
 
     handleScreenshotIntervalSelect(e) {
@@ -885,44 +858,20 @@ export class CustomizeView extends LitElement {
     }
 
     render() {
-        const loggedIn = !!this.firebaseUser;
         console.log('[CustomizeView] render: Rendering component template.');
         return html`
             <div class="settings-container">
                 <div class="header-section">
                     <div>
-                        <h1 class="app-title">Pickle Glass</h1>
+                        <h1 class="app-title">Ergo Copilot</h1>
                         <div class="account-info">
-                            ${this.firebaseUser
-                                ? html`Account: ${this.firebaseUser.email || 'Logged In'}`
-                                : this.apiKey && this.apiKey.length > 10
-                                    ? html`API Key: ${this.apiKey.substring(0, 6)}...${this.apiKey.substring(this.apiKey.length - 6)}`
-                                    : `Account: Not Logged In`
-                            }
+                            <span style="color: #34d399;">●</span> ${this.userEmail || 'Loading...'}
                         </div>
                     </div>
-                    <div class="invisibility-icon ${this.isContentProtectionOn ? 'visible' : ''}" title="Invisibility is On">
-                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M9.785 7.41787C8.7 7.41787 7.79 8.19371 7.55667 9.22621C7.0025 8.98704 6.495 9.05121 6.11 9.22037C5.87083 8.18204 4.96083 7.41787 3.88167 7.41787C2.61583 7.41787 1.58333 8.46204 1.58333 9.75121C1.58333 11.0404 2.61583 12.0845 3.88167 12.0845C5.08333 12.0845 6.06333 11.1395 6.15667 9.93787C6.355 9.79787 6.87417 9.53537 7.51 9.94954C7.615 11.1454 8.58333 12.0845 9.785 12.0845C11.0508 12.0845 12.0833 11.0404 12.0833 9.75121C12.0833 8.46204 11.0508 7.41787 9.785 7.41787ZM3.88167 11.4195C2.97167 11.4195 2.2425 10.6729 2.2425 9.75121C2.2425 8.82954 2.9775 8.08287 3.88167 8.08287C4.79167 8.08287 5.52083 8.82954 5.52083 9.75121C5.52083 10.6729 4.79167 11.4195 3.88167 11.4195ZM9.785 11.4195C8.875 11.4195 8.14583 10.6729 8.14583 9.75121C8.14583 8.82954 8.875 8.08287 9.785 8.08287C10.695 8.08287 11.43 8.82954 11.43 9.75121C11.43 10.6729 10.6892 11.4195 9.785 11.4195ZM12.6667 5.95954H1V6.83454H12.6667V5.95954ZM8.8925 1.36871C8.76417 1.08287 8.4375 0.931207 8.12833 1.03037L6.83333 1.46204L5.5325 1.03037L5.50333 1.02454C5.19417 0.93704 4.8675 1.10037 4.75083 1.39787L3.33333 5.08454H10.3333L8.91 1.39787L8.8925 1.36871Z" fill="white"/>
-                        </svg>
-                    </div>
-                </div>
-
-                <div class="api-key-section" style="padding: 6px 0; border-top: 1px solid rgba(255, 255, 255, 0.1);">
-                    <input 
-                        type="password" 
-                        id="api-key-input"
-                        placeholder="Enter API Key" 
-                        .value=${this.apiKey || ''}
-                        ?disabled=${loggedIn}
-                        style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.2); color: white; border-radius: 4px; padding: 4px; font-size: 11px; margin-bottom: 4px;"
-                    >
-                    <button class="settings-button full-width" @click=${this.handleSaveApiKey} ?disabled=${loggedIn}>
-                        Save API Key
-                    </button>
                 </div>
 
                 <div class="shortcuts-section">
+                    <h3 style="color: white; font-size: 12px; margin: 12px 0 8px 0; font-weight: 500;">Keyboard Shortcuts</h3>
                     ${this.getMainShortcuts().map(shortcut => html`
                         <div class="shortcut-item">
                             <span class="shortcut-name">${shortcut.name}</span>
@@ -933,40 +882,14 @@ export class CustomizeView extends LitElement {
                         </div>
                     `)}
                 </div>
-
+                
                 <div class="buttons-section">
-                    <button class="settings-button full-width" @click=${this.handlePersonalize}>
-                        <span>Personalize / Meeting Notes</span>
-                    </button>
-                    
-                    <div class="move-buttons">
-                        <button class="settings-button half-width" @click=${this.handleMoveLeft}>
-                            <span>← Move</span>
-                        </button>
-                        <button class="settings-button half-width" @click=${this.handleMoveRight}>
-                            <span>Move →</span>
-                        </button>
-                    </div>
-                    
-                    <button class="settings-button full-width" @click=${this.handleToggleInvisibility}>
-                        <span>${this.isContentProtectionOn ? 'Disable Invisibility' : 'Enable Invisibility'}</span>
-                    </button>
-                    
                     <div class="bottom-buttons">
-                        ${this.firebaseUser
-                            ? html`
-                                <button class="settings-button half-width danger" @click=${this.handleFirebaseLogout}>
-                                    <span>Logout</span>
-                                </button>
-                                `
-                            : html`
-                                <button class="settings-button half-width danger" @click=${this.handleClearApiKey}>
-                                    <span>Clear API Key</span>
-                                </button>
-                                `
-                        }
-                        <button class="settings-button half-width danger" @click=${this.handleQuit}>
-                            <span>Quit</span>
+                        <button class="settings-button half-width danger" @click=${this.handleLogout}>
+                            Log Out
+                        </button>
+                        <button class="settings-button half-width" @click=${this.handleQuit}>
+                            Quit
                         </button>
                     </div>
                 </div>
@@ -976,79 +899,22 @@ export class CustomizeView extends LitElement {
 
     getMainShortcuts() {
         return [
-            { name: 'Show / Hide', key: '\\' },
-            { name: 'Ask Anything', key: '↵' },
-            { name: 'Scroll AI Response', key: '↕' }
+            { name: 'Show/Hide', key: '\\' },
+            { name: 'Move Up', key: '↑' },
+            { name: 'Move Down', key: '↓' },
+            { name: 'Move Left', key: '←' },
+            { name: 'Move Right', key: '→' },
+            { name: 'Ask Assistant', key: 'Enter' },
         ];
     }
 
-    handleMoveLeft() {
-        console.log('Move Left clicked');
+    async handleLogout() {
+        console.log('Logout clicked');
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
-            ipcRenderer.invoke('move-window-step', 'left');
-        }
-    }
-
-    handleMoveRight() {
-        console.log('Move Right clicked');
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            ipcRenderer.invoke('move-window-step', 'right');
-        }
-    }
-
-    async handlePersonalize() {
-        console.log('Personalize clicked');
-        if (window.require) {
-            const { ipcRenderer, shell } = window.require('electron');
-            try {
-                const webUrl = await ipcRenderer.invoke('get-web-url');
-                shell.openExternal(`${webUrl}/personalize`);
-            } catch (error) {
-                console.error('Failed to get web URL or open external link:', error);
-                shell.openExternal('http://localhost:3000/personalize');
-            }
-        }
-    }
-
-    async handleToggleInvisibility() {
-        console.log('Toggle Invisibility clicked');
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            this.isContentProtectionOn = await ipcRenderer.invoke('toggle-content-protection');
-            this.requestUpdate();
-        }
-    }
-
-    async handleSaveApiKey() {
-        const input = this.shadowRoot.getElementById('api-key-input');
-        if (!input || !input.value) return;
-
-        const newApiKey = input.value;
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            try {
-                const result = await ipcRenderer.invoke('save-api-key', newApiKey);
-                if (result.success) {
-                    console.log('API Key saved successfully via IPC.');
-                    this.apiKey = newApiKey;
-                    this.requestUpdate();
-                } else {
-                     console.error('Failed to save API Key via IPC:', result.error);
-                }
-            } catch(e) {
-                console.error('Error invoking save-api-key IPC:', e);
-            }
-        }
-    }
-
-    async handleClearApiKey() {
-        console.log('Clear API Key clicked');
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            await ipcRenderer.invoke('remove-api-key');
-            this.requestUpdate();
+            // Clear WorkOS tokens
+            await ipcRenderer.invoke('logout-workos');
+            // The header controller will handle the transition to login view
         }
     }
 
@@ -1060,63 +926,7 @@ export class CustomizeView extends LitElement {
         }
     }
 
-    handleFirebaseLogout() {
-        console.log('Firebase Logout clicked');
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            ipcRenderer.invoke('firebase-logout');
-        }
-    }
 
-    async loadInitialFirebaseUser() {
-        if (!window.require) {
-            console.log('[CustomizeView] Electron not available');
-            return;
-        }
-
-        const { ipcRenderer } = window.require('electron');
-        
-        try {
-            console.log('[CustomizeView] Loading initial Firebase user...');
-            
-            for (let i = 0; i < 3; i++) {
-                const user = await ipcRenderer.invoke('get-current-firebase-user');
-                console.log(`[CustomizeView] Attempt ${i + 1} - Firebase user:`, user);
-                
-                if (user) {
-                    this.firebaseUser = user;
-                    this.requestUpdate();
-                    console.log('[CustomizeView] Firebase user loaded successfully:', user.email);
-                    return;
-                }
-                
-                await new Promise(resolve => setTimeout(resolve, 100));
-            }
-            
-            console.log('[CustomizeView] No Firebase user found after 3 attempts');
-            this.firebaseUser = null;
-            this.requestUpdate();
-            
-        } catch (error) {
-            console.error('[CustomizeView] Failed to load Firebase user:', error);
-            this.firebaseUser = null;
-            this.requestUpdate();
-        }
-    }
-
-    getApiKeyFromStorage() {
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            ipcRenderer.invoke('get-current-api-key').then(key => {
-                this.apiKey = key;
-                this.requestUpdate();
-            }).catch(error => {
-                console.log('[CustomizeView] Failed to get API key:', error);
-                this.apiKey = null;
-            });
-        }
-        return null;
-    }
 }
 
 customElements.define('customize-view', CustomizeView);

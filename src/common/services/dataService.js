@@ -6,7 +6,7 @@ class DataService {
         this.cacheTimeout = config.get('cacheTimeout');
         this.enableCaching = config.get('enableCaching');
         this.sqliteClient = null;
-        this.currentUserId = 'default_user';
+        this.currentUserId = null;
         this.isInitialized = false;
 
         if (config.get('enableSQLiteStorage')) {
@@ -43,7 +43,8 @@ class DataService {
     }
 
     getCacheKey(operation, params = '') {
-        return `${this.currentUserId}:${operation}:${params}`;
+        const userId = this.currentUserId || 'guest';
+        return `${userId}:${operation}:${params}`;
     }
 
     getFromCache(key) {
@@ -64,36 +65,42 @@ class DataService {
         this.cache.clear();
     }
 
-    async findOrCreateUser(firebaseUser) {
+    async findOrCreateUser(user) {
         if (!this.sqliteClient) {
             console.log('[DataService] SQLite client not available, skipping user creation');
-            return firebaseUser;
+            return user;
         }
         
         try {
             await this.initialize();
-            const existingUser = await this.sqliteClient.getUser(firebaseUser.uid);
+            const existingUser = await this.sqliteClient.getUser(user.uid);
             
             if (!existingUser) {
-                console.log(`[DataService] Creating new user in local DB: ${firebaseUser.uid}`);
+                console.log(`[DataService] Creating new user in local DB: ${user.uid}`);
                 await this.sqliteClient.findOrCreateUser({
-                    uid: firebaseUser.uid,
-                    display_name: firebaseUser.displayName || firebaseUser.display_name,
-                    email: firebaseUser.email
+                    uid: user.uid,
+                    display_name: user.displayName || user.display_name,
+                    email: user.email
                 });
+            } else {
+                console.log(`[DataService] User already exists: ${user.uid}`);
+                // User already exists, no need to recreate
             }
             
             this.clearCache();
-            return firebaseUser;
+            return user;
         } catch (error) {
-            console.error('[DataService] Failed to sync Firebase user to local DB:', error);
-            return firebaseUser;
+            console.error('[DataService] Failed to sync user to local DB:', error);
+            return user;
         }
     }
 
     async saveApiKey(apiKey) {
         if (!this.sqliteClient) {
             throw new Error("SQLite client not available.");
+        }
+        if (!this.currentUserId) {
+            throw new Error("No user logged in. Please authenticate first.");
         }
         try {
             await this.initialize();
@@ -107,7 +114,7 @@ class DataService {
     }
 
     async checkApiKey() {
-        if (!this.sqliteClient) return { hasApiKey: false };
+        if (!this.sqliteClient || !this.currentUserId) return { hasApiKey: false };
         try {
             await this.initialize();
             const user = await this.sqliteClient.getUser(this.currentUserId);
@@ -123,7 +130,7 @@ class DataService {
         const cached = this.getFromCache(cacheKey);
         if (cached) return cached;
 
-        if (!this.sqliteClient) return [];
+        if (!this.sqliteClient || !this.currentUserId) return [];
         try {
             await this.initialize();
             const presets = await this.sqliteClient.getPresets(this.currentUserId);
@@ -156,6 +163,9 @@ class DataService {
         if (!this.sqliteClient) {
             throw new Error("SQLite client not available.");
         }
+        if (!this.currentUserId) {
+            throw new Error("No user logged in. Cannot save WorkOS tokens.");
+        }
         try {
             await this.initialize();
             await this.sqliteClient.saveWorkOSTokens(this.currentUserId, tokens);
@@ -173,7 +183,7 @@ class DataService {
         const cached = this.getFromCache(cacheKey);
         if (cached) return cached;
 
-        if (!this.sqliteClient) return null;
+        if (!this.sqliteClient || !this.currentUserId) return null;
         try {
             await this.initialize();
             const tokens = await this.sqliteClient.getWorkOSTokens(this.currentUserId);
@@ -184,6 +194,26 @@ class DataService {
         } catch (error) {
             console.error('[DataService] Failed to get WorkOS tokens:', error);
             return null;
+        }
+    }
+    
+    async restoreAuthenticatedUser() {
+        if (!this.sqliteClient) return false;
+        try {
+            await this.initialize();
+            
+            // Get all authenticated users (there should only be one)
+            const user = await this.sqliteClient.getAuthenticatedWorkOSUser();
+            if (user && user.uid) {
+                this.setCurrentUser(user.uid);
+                console.log('[DataService] Restored authenticated user:', user.email);
+                
+                return true;
+            }
+            return false;
+        } catch (error) {
+            console.error('[DataService] Failed to restore authenticated user:', error);
+            return false;
         }
     }
 }
