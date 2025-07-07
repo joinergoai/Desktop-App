@@ -1039,27 +1039,6 @@ END OF CRITICAL CONTEXT - Use this information to provide accurate, personalized
 
         console.log(systemPrompt);
 
-        let API_KEY = localStorage.getItem('openai_api_key');
-
-        if (!API_KEY && window.require) {
-            try {
-                const { ipcRenderer } = window.require('electron');
-                API_KEY = await ipcRenderer.invoke('get-stored-api-key');
-            } catch (error) {
-                console.error('Failed to get API key via IPC:', error);
-            }
-        }
-
-        if (!API_KEY) {
-            API_KEY = process.env.OPENAI_API_KEY;
-        }
-
-        if (!API_KEY) {
-            throw new Error('No API key found in storage, IPC, or environment');
-        }
-
-        console.log('[Renderer] Using API key for message request');
-
         const messages = [
             {
                 role: 'system',
@@ -1086,83 +1065,64 @@ END OF CRITICAL CONTEXT - Use this information to provide accurate, personalized
             console.log('📷 Screenshot included in message request');
         }
 
-        const { isLoggedIn } = await queryLoginState();
-        const keyType = isLoggedIn ? 'vKey' : 'apiKey';
-
         console.log('🚀 Sending request to OpenAI...');
-        const { url, headers } =
-            keyType === 'apiKey'
-                ? {
-                      url: 'https://api.openai.com/v1/chat/completions',
-                      headers: { Authorization: `Bearer ${API_KEY}`, 'Content-Type': 'application/json' },
-                  }
-                : {
-                      url: 'https://api.portkey.ai/v1/chat/completions',
-                      headers: {
-                          'x-portkey-api-key': 'gRv2UGRMq6GGLJ8aVEB4e7adIewu',
-                          'x-portkey-virtual-key': API_KEY,
-                          'Content-Type': 'application/json',
-                      },
-                  };
-
-        const response = await fetch(url, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-                model: 'gpt-4.1',
-                messages,
-                temperature: 0.7,
-                max_tokens: 2048,
-                stream: true,
-            }),
+        
+        // Use IPC to call the authenticated API client in main process
+        const { ipcRenderer } = window.require('electron');
+        
+        // Request streaming chat completion through IPC
+        await ipcRenderer.invoke('chat-completion-start', {
+            model: 'gpt-4.1',
+            messages,
+            temperature: 0.7,
+            max_tokens: 2048,
+            stream: true,
         });
-
-        if (!response.ok) {
-            throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
-        }
-
-        // --- 스트리밍 응답 처리 ---
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
         let fullResponse = '';
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            const chunk = decoder.decode(value);
-            const lines = chunk.split('\n').filter(line => line.trim() !== '');
-
-            for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                    const data = line.substring(6);
-                    if (data === '[DONE]') {
-                        // 스트리밍 종료 신호
-                        if (window.require) {
-                            const { ipcRenderer } = window.require('electron');
-                            ipcRenderer.send('ask-response-stream-end');
-                        }
-                        return { success: true, response: fullResponse };
-                    }
-                    try {
-                        const json = JSON.parse(data);
-                        const token = json.choices[0]?.delta?.content || '';
-                        if (token) {
-                            fullResponse += token;
-                            // 💡 렌더러 프로세스에 토큰 청크 전송
-                            if (window.require) {
-                                const { ipcRenderer } = window.require('electron');
-                                ipcRenderer.send('ask-response-chunk', { token });
+        
+        // Set up a promise to handle the streaming response
+        return new Promise((resolve, reject) => {
+            // Listen for streaming chunks from main process
+            ipcRenderer.on('chat-completion-chunk', (event, chunk) => {
+                try {
+                    const lines = chunk.split('\n').filter(line => line.trim() !== '');
+                    
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const data = line.substring(6);
+                            if (data === '[DONE]') {
+                                // 스트리밍 종료 신호
+                                ipcRenderer.send('ask-response-stream-end');
+                                ipcRenderer.removeAllListeners('chat-completion-chunk');
+                                ipcRenderer.removeAllListeners('chat-completion-error');
+                                resolve({ success: true, response: fullResponse });
+                                return;
+                            }
+                            try {
+                                const json = JSON.parse(data);
+                                const token = json.choices[0]?.delta?.content || '';
+                                if (token) {
+                                    fullResponse += token;
+                                    // 💡 렌더러 프로세스에 토큰 청크 전송
+                                    ipcRenderer.send('ask-response-chunk', { token });
+                                }
+                            } catch (error) {
+                                console.error('Error parsing stream data chunk:', error, 'Chunk:', data);
                             }
                         }
-                    } catch (error) {
-                        console.error('Error parsing stream data chunk:', error, 'Chunk:', data);
                     }
+                } catch (error) {
+                    console.error('Error processing chunk:', error);
                 }
-            }
-        }
-        // 이 부분은 스트리밍이 끝나면 사실상 도달하지 않음
-        return { success: true, response: fullResponse };
+            });
+            
+            // Listen for errors
+            ipcRenderer.on('chat-completion-error', (event, error) => {
+                ipcRenderer.removeAllListeners('chat-completion-chunk');
+                ipcRenderer.removeAllListeners('chat-completion-error');
+                reject(new Error(error));
+            });
+        });
     } catch (error) {
         console.error('Error processing message:', error);
         const errorMessage = `Error: ${error.message}`;

@@ -11,10 +11,9 @@ class WorkOSAuth {
 
     /**
      * Get a valid WorkOS access token, refreshing if necessary
-     * @param {string} uid - User ID
      * @returns {Promise<string>} Valid access token
      */
-    async getAccessToken(uid) {
+    async getAccessToken() {
         try {
             const tokens = await dataService.getWorkOSTokens();
             
@@ -29,7 +28,7 @@ class WorkOSAuth {
 
             if (now >= expiresAt - bufferTime) {
                 console.log('[WorkOS Auth] Token expired or expiring soon, refreshing...');
-                return await this.refreshToken(uid);
+                return await this.refreshToken();
             }
 
             return tokens.workos_access_token;
@@ -41,16 +40,15 @@ class WorkOSAuth {
 
     /**
      * Refresh the WorkOS access token
-     * @param {string} uid - User ID
      * @returns {Promise<string>} New access token
      */
-    async refreshToken(uid) {
+    async refreshToken() {
         // Prevent multiple simultaneous refresh attempts
         if (this.refreshPromise) {
             return await this.refreshPromise;
         }
 
-        this.refreshPromise = this._doRefresh(uid);
+        this.refreshPromise = this._doRefresh();
         
         try {
             const token = await this.refreshPromise;
@@ -60,7 +58,7 @@ class WorkOSAuth {
         }
     }
 
-    async _doRefresh(uid) {
+    async _doRefresh() {
         const tokens = await dataService.getWorkOSTokens();
         
         if (!tokens || !tokens.workos_refresh_token) {
@@ -110,10 +108,8 @@ class WorkOSAuth {
      * @returns {Promise<Response>} Response
      */
     async authenticatedRequest(endpoint, options = {}) {
-        const uid = dataService.currentUserId;
-        
         try {
-            const accessToken = await this.getAccessToken(uid);
+            const accessToken = await this.getAccessToken();
             
             const headers = {
                 'Authorization': `Bearer ${accessToken}`,
@@ -129,7 +125,7 @@ class WorkOSAuth {
             // If we get a 401, try refreshing the token and retry once
             if (response.status === 401) {
                 console.log('[WorkOS Auth] Got 401, attempting token refresh...');
-                const newToken = await this.refreshToken(uid);
+                const newToken = await this.refreshToken();
                 
                 headers.Authorization = `Bearer ${newToken}`;
                 return await fetch(endpoint, {

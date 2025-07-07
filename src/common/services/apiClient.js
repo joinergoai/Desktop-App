@@ -1,9 +1,10 @@
 const axios = require('axios');
 const config = require('../config/config');
+const workosAuth = require('./workosAuth');
 
 class APIClient {
     constructor() {
-        this.baseURL = config.get('apiUrl');
+        this.baseURL = process.env.BACKEND_URL;
         this.client = axios.create({
             baseURL: this.baseURL,
             timeout: config.get('apiTimeout'),
@@ -229,6 +230,46 @@ class APIClient {
         } catch (error) {
             console.error('failed to get full user data:', error);
             return null;
+        }
+    }
+
+    async chatCompletion(requestBody) {
+        try {
+            // Get valid access token (handles refresh automatically)
+            const accessToken = await workosAuth.getAccessToken();
+            
+            const isStreaming = requestBody.stream === true;
+            
+            if (isStreaming) {
+                // For streaming, use fetch instead of axios for better SSE support
+                const response = await fetch(`${this.baseURL}/api/desktop/openai/chat/completions`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+
+                if (!response.ok) {
+                    const error = await response.text();
+                    throw new Error(`API error: ${response.status} - ${error}`);
+                }
+
+                // Return the ReadableStream body directly for SSE parsing
+                return response.body;
+            } else {
+                // Non-streaming can use axios
+                const response = await this.client.post('/api/desktop/openai/chat/completions', requestBody, {
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`
+                    }
+                });
+                return response.data;
+            }
+        } catch (error) {
+            console.error('Chat completion request failed:', error);
+            throw error;
         }
     }
 }

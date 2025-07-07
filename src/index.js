@@ -16,6 +16,8 @@ const { createWindows } = require('./electron/windowManager.js');
 const { setupLiveSummaryIpcHandlers, stopMacOSAudioCapture } = require('./features/listen/liveSummaryService.js');
 const databaseInitializer = require('./common/services/databaseInitializer');
 const dataService = require('./common/services/dataService');
+const apiClient = require('./common/services/apiClient');
+const workosAuth = require('./common/services/workosAuth');
 const path = require('node:path');
 const { Deeplink } = require('electron-deeplink');
 const fetch = require('node-fetch');
@@ -315,7 +317,6 @@ function setupGeneralIpcHandlers() {
                 console.log('[IPC] Users before logout:', usersBefore);
             }
             
-            const workosAuth = require('./common/services/workosAuth');
             await workosAuth.logout();
             dataService.setCurrentUser(null);  // No current user after logout
             
@@ -397,6 +398,60 @@ function setupGeneralIpcHandlers() {
                 email: 'Not signed in',
                 isAuthenticated: false
             };
+        }
+    });
+
+    // Handle chat completion requests
+    ipcMain.handle('chat-completion-start', async (event, requestBody) => {
+        try {
+            console.log('[IPC] Starting chat completion request...');
+            
+            // Get the ReadableStream from apiClient
+            const stream = await apiClient.chatCompletion(requestBody);
+            
+            if (!requestBody.stream) {
+                // Non-streaming response - just return the data
+                return stream;
+            }
+            
+            // For streaming, we need to read the stream and send chunks via IPC
+            const reader = stream.getReader();
+            const decoder = new TextDecoder();
+            const sender = event.sender;
+            
+            // Process the stream
+            (async () => {
+                try {
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        
+                        const chunk = decoder.decode(value, { stream: true });
+                        
+                        // Send chunk to renderer process
+                        if (!sender.isDestroyed()) {
+                            sender.send('chat-completion-chunk', chunk);
+                        }
+                    }
+                    
+                    // Signal completion
+                    if (!sender.isDestroyed()) {
+                        sender.send('chat-completion-chunk', 'data: [DONE]\n\n');
+                    }
+                } catch (error) {
+                    console.error('[IPC] Error reading stream:', error);
+                    if (!sender.isDestroyed()) {
+                        sender.send('chat-completion-error', error.message);
+                    }
+                }
+            })();
+            
+            // Return immediately for streaming requests
+            return { streaming: true };
+            
+        } catch (error) {
+            console.error('[IPC] Chat completion failed:', error);
+            throw error;
         }
     });
 }
