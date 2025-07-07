@@ -31,7 +31,7 @@ const windowDefinitions = {
         options: {
             /*…*/
         },
-        allowedStates: ['apikey', 'app'],
+        allowedStates: ['login', 'calendar', 'app'],
     },
     ask: {
         file: 'ask.html',
@@ -1406,7 +1406,10 @@ function setupIpcHandlers() {
                     });
                 }
             }, 500);
-        } else {         // 'apikey'
+        } else if (state === 'calendar') {
+            // Calendar state - don't create feature windows yet, but destroy any existing ones
+            destroyFeatureWindows();
+        } else {         // 'login'
             destroyFeatureWindows();
         }
 

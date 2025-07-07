@@ -1,34 +1,44 @@
 import './AppHeader.js';
 import './ApiKeyHeader.js';
+import './CalendarEventSelector.js';
 
 class HeaderTransitionManager {
     constructor() {
         this.headerContainer = document.getElementById('header-container');
-        this.currentHeaderType = null;   // 'apikey' | 'app'
-        this.apiKeyHeader = null;
+        this.currentHeaderType = null;   // 'login' | 'calendar' | 'app'
+        this.loginHeader = null;
         this.appHeader = null;
-        this.hasApiKey = false;
+        this.calendarEventSelector = null;
         this.isWorkOSAuthenticated = false;
+        this.selectedCalendarEvent = null;
 
         /**
          * Only one header window is allowed
-         * @param {'apikey'|'app'} type
+         * @param {'login'|'calendar'|'app'} type
          */
         this.ensureHeader = (type) => {
             if (this.currentHeaderType === type) return;
 
-            if (this.apiKeyHeader) { 
-                this.apiKeyHeader.remove(); 
-                this.apiKeyHeader = null; 
+            if (this.loginHeader) { 
+                this.loginHeader.remove(); 
+                this.loginHeader = null; 
             }
             if (this.appHeader) { 
                 this.appHeader.remove(); 
                 this.appHeader = null; 
             }
+            if (this.calendarEventSelector) {
+                this.calendarEventSelector.remove();
+                this.calendarEventSelector = null;
+            }
 
-            if (type === 'apikey') {
-                this.apiKeyHeader = document.createElement('apikey-header');
-                this.headerContainer.appendChild(this.apiKeyHeader);
+            if (type === 'login') {
+                this.loginHeader = document.createElement('apikey-header');
+                this.headerContainer.appendChild(this.loginHeader);
+            } else if (type === 'calendar') {
+                this.calendarEventSelector = document.createElement('calendar-event-selector');
+                this.headerContainer.appendChild(this.calendarEventSelector);
+                this._setupCalendarEventHandlers();
             } else {
                 this.appHeader = document.createElement('app-header');
                 this.headerContainer.appendChild(this.appHeader);
@@ -50,79 +60,68 @@ class HeaderTransitionManager {
 
         const { ipcRenderer } = window.require('electron');
 
-        // Check for existing API key
-        ipcRenderer
-            .invoke('get-current-api-key')
-            .then(storedKey => {
-                this.hasApiKey = !!storedKey;
-            })
-            .catch(() => {});
-
         // WorkOS authentication handlers
         ipcRenderer.on('workos-auth-success', async (event, payload) => {
             console.log('[HeaderController] WorkOS authentication successful:', payload);
             this.isWorkOSAuthenticated = true;
-            this.hasApiKey = false; // WorkOS users don't need API keys
-            this.transitionToAppHeader(true);
+            this.transitionToCalendarSelector(true);
         });
         
         ipcRenderer.on('workos-auth-failed', (event, error) => {
             console.error('[HeaderController] WorkOS authentication failed:', error);
-            if (this.apiKeyHeader) {
-                this.apiKeyHeader.errorMessage = error.message || 'WorkOS authentication failed';
-                this.apiKeyHeader.requestUpdate();
+            if (this.loginHeader) {
+                this.loginHeader.errorMessage = error.message || 'WorkOS authentication failed';
+                this.loginHeader.requestUpdate();
             }
         });
 
         ipcRenderer.on('authenticated-user-restored', async (event, user) => {
             console.log('[HeaderController] Authenticated user restored:', user);
             this.isWorkOSAuthenticated = true;
-            this.hasApiKey = false; // WorkOS users don't need API keys
-            if (!this.appHeader) {
-                await this.transitionToAppHeader(true);
+            if (!this.appHeader && !this.calendarEventSelector) {
+                await this.transitionToCalendarSelector(true);
             }
-        });
-
-        // API key handlers
-        ipcRenderer.on('api-key-validated', () => {
-            this.hasApiKey = true;
-            this.transitionToAppHeader();
-        });
-
-        ipcRenderer.on('api-key-removed', () => {
-            this.hasApiKey = false;
-            if (!this.isWorkOSAuthenticated) {
-                this.transitionToApiKeyHeader();
-            }
-        });
-
-        ipcRenderer.on('api-key-updated', () => {
-            this.hasApiKey = true;
-            this.transitionToAppHeader();
         });
 
         // Logout handler
         ipcRenderer.on('request-logout', async () => {
             console.log('[HeaderController] Received request to sign out.');
             this.isWorkOSAuthenticated = false;
-            if (!this.hasApiKey) {
-                this.transitionToApiKeyHeader();
-            }
+            this.selectedCalendarEvent = null;
+            this.transitionToLoginHeader();
+        });
+
+        // Calendar event handlers
+        ipcRenderer.on('calendar-event-selected', (event, calendarEvent) => {
+            console.log('[HeaderController] Calendar event selected:', calendarEvent);
+            this.selectedCalendarEvent = calendarEvent;
+            this.transitionToAppHeader(true);
+        });
+
+        ipcRenderer.on('calendar-event-skipped', () => {
+            console.log('[HeaderController] Calendar event selection skipped');
+            this.selectedCalendarEvent = null;
+            this.transitionToAppHeader(true);
+        });
+    }
+
+    _setupCalendarEventHandlers() {
+        if (!this.calendarEventSelector) return;
+
+        this.calendarEventSelector.addEventListener('event-selected', (e) => {
+            console.log('[HeaderController] Calendar event selected via DOM:', e.detail.event);
+            this.selectedCalendarEvent = e.detail.event;
+            this.transitionToAppHeader(true);
+        });
+
+        this.calendarEventSelector.addEventListener('selection-skipped', () => {
+            console.log('[HeaderController] Calendar event selection skipped via DOM');
+            this.selectedCalendarEvent = null;
+            this.transitionToAppHeader(true);
         });
     }
 
     async _bootstrap() {
-        // Check for existing API key
-        let storedKey = null;
-        if (window.require) {
-            try {
-                storedKey = await window
-                    .require('electron')
-                    .ipcRenderer.invoke('get-current-api-key');
-            } catch (_) {}
-        }
-        this.hasApiKey = !!storedKey;
-
         // Check WorkOS authentication status
         if (window.require) {
             try {
@@ -134,17 +133,18 @@ class HeaderTransitionManager {
         }
 
         // Determine initial view
-        if (this.isWorkOSAuthenticated || this.hasApiKey) {
-            await this._resizeForApp();
-            this.ensureHeader('app');
+        if (this.isWorkOSAuthenticated) {
+            // Go to calendar selector for authenticated users
+            await this._resizeForCalendar();
+            this.ensureHeader('calendar');
         } else {
-            await this._resizeForApiKey();
-            this.ensureHeader('apikey');
+            await this._resizeForLogin();
+            this.ensureHeader('login');
         }
     }
 
     notifyHeaderState(stateOverride) {
-        const state = stateOverride || this.currentHeaderType || 'apikey';
+        const state = stateOverride || this.currentHeaderType || 'login';
         if (window.require) {
             window.require('electron').ipcRenderer.send('header-state-changed', state);
         }
@@ -157,18 +157,22 @@ class HeaderTransitionManager {
 
         const canAnimate =
             animate &&
-            this.apiKeyHeader &&
-            !this.apiKeyHeader.classList.contains('hidden') &&
-            typeof this.apiKeyHeader.startSlideOutAnimation === 'function';
+            ((this.loginHeader &&
+            !this.loginHeader.classList.contains('hidden') &&
+            typeof this.loginHeader.startSlideOutAnimation === 'function') ||
+            (this.calendarEventSelector &&
+            !this.calendarEventSelector.classList.contains('hidden')));
     
         if (canAnimate) {
-            const old = this.apiKeyHeader;
+            const old = this.loginHeader || this.calendarEventSelector;
             const onEnd = () => {
                 clearTimeout(fallback);
                 this._resizeForApp().then(() => this.ensureHeader('app'));
             };
             old.addEventListener('animationend', onEnd, { once: true });
-            old.startSlideOutAnimation();
+            if (old.startSlideOutAnimation) {
+                old.startSlideOutAnimation();
+            }
     
             const fallback = setTimeout(onEnd, 450);
         } else {
@@ -185,7 +189,7 @@ class HeaderTransitionManager {
             .catch(() => {});
     }
     
-    _resizeForApiKey() {
+    _resizeForLogin() {
         if (!window.require) return Promise.resolve();
         return window
             .require('electron')
@@ -193,14 +197,49 @@ class HeaderTransitionManager {
             .catch(() => {});
     }
 
-    async transitionToApiKeyHeader() {
-        await this._resizeForApiKey();
+    _resizeForCalendar() {
+        if (!window.require) return Promise.resolve();
+        return window
+            .require('electron')
+            .ipcRenderer.invoke('resize-header-window', { width: 380, height: 290 })
+            .catch(() => {});
+    }
+
+    async transitionToLoginHeader() {
+        await this._resizeForLogin();
         
-        if (this.currentHeaderType !== 'apikey') {
-            this.ensureHeader('apikey');
+        if (this.currentHeaderType !== 'login') {
+            this.ensureHeader('login');
         }
         
-        if (this.apiKeyHeader) this.apiKeyHeader.reset();
+        if (this.loginHeader) this.loginHeader.reset();
+    }
+
+    async transitionToCalendarSelector(animate = true) {
+        if (this.currentHeaderType === 'calendar') {
+            return this._resizeForCalendar();
+        }
+
+        const canAnimate =
+            animate &&
+            this.loginHeader &&
+            !this.loginHeader.classList.contains('hidden') &&
+            typeof this.loginHeader.startSlideOutAnimation === 'function';
+
+        if (canAnimate) {
+            const old = this.loginHeader;
+            const onEnd = () => {
+                clearTimeout(fallback);
+                this._resizeForCalendar().then(() => this.ensureHeader('calendar'));
+            };
+            old.addEventListener('animationend', onEnd, { once: true });
+            old.startSlideOutAnimation();
+
+            const fallback = setTimeout(onEnd, 450);
+        } else {
+            this.ensureHeader('calendar');
+            this._resizeForCalendar();
+        }
     }
 }
 
