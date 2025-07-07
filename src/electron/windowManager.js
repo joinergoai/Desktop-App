@@ -1180,10 +1180,8 @@ function loadAndRegisterShortcuts() {
         });
     };
 
-    const openaiSessionRef = { current: null };
-
     if (!header) {
-        return updateGlobalShortcuts(defaultKeybinds, undefined, sendToRenderer, openaiSessionRef);
+        return updateGlobalShortcuts(defaultKeybinds, undefined, sendToRenderer);
     }
 
     header.webContents
@@ -1191,16 +1189,16 @@ function loadAndRegisterShortcuts() {
         .then(saved => (saved ? JSON.parse(saved) : {}))
         .then(savedKeybinds => {
             const keybinds = { ...defaultKeybinds, ...savedKeybinds };
-            updateGlobalShortcuts(keybinds, header, sendToRenderer, openaiSessionRef);
+            updateGlobalShortcuts(keybinds, header, sendToRenderer);
         })
-        .catch(() => updateGlobalShortcuts(defaultKeybinds, header, sendToRenderer, openaiSessionRef));
+        .catch(() => updateGlobalShortcuts(defaultKeybinds, header, sendToRenderer));
 }
 
 function updateLayout() {
     layoutManager.updateLayout();
 }
 
-function setupIpcHandlers(openaiSessionRef) {
+function setupIpcHandlers() {
     const layoutManager = new WindowLayoutManager();
     // const movementManager = new SmoothMovementManager();
 
@@ -1440,7 +1438,7 @@ function setupIpcHandlers(openaiSessionRef) {
                         });
                     };
 
-                    updateGlobalShortcuts(keybinds, header, sendToRenderer, { current: null });
+                    updateGlobalShortcuts(keybinds, header, sendToRenderer);
                 })
                 .catch(console.error);
         }
@@ -1731,12 +1729,7 @@ async function setApiKey(apiKey) {
         console.error('[WindowManager] Failed to save API key to SQLite:', err);
     }
 
-    windowPool.forEach(win => {
-        if (win && !win.isDestroyed()) {
-            const js = apiKey ? `localStorage.setItem('openai_api_key', ${JSON.stringify(apiKey)});` : `localStorage.removeItem('openai_api_key');`;
-            win.webContents.executeJavaScript(js).catch(() => {});
-        }
-    });
+    // Removed localStorage operations for openai_api_key
 }
 
 async function loadApiKeyFromDb() {
@@ -1832,20 +1825,10 @@ function setupApiKeyIPC() {
         return storedApiKey;
     });
 
-    ipcMain.handle('get-ragie-api-key', async () => {
-        const ragieApiKey = process.env.RAGIE_API_KEY;
-        if (!ragieApiKey) {
-            console.warn('[WindowManager] No RAGIE_API_KEY found in environment');
-            return null;
-        }
-        console.log('[WindowManager] Ragie API key retrieved from environment');
-        return ragieApiKey;
-    });
-
     console.log('[WindowManager] API key related IPC handlers registered (SQLite-backed)');
 }
 
-function createWindow(sendToRenderer, openaiSessionRef) {
+function createWindow(sendToRenderer) {
     const mainWindow = new BrowserWindow({
         width: DEFAULT_WINDOW_WIDTH,
         height: HEADER_HEIGHT,
@@ -1922,16 +1905,16 @@ function createWindow(sendToRenderer, openaiSessionRef) {
                         keybinds = { ...defaultKeybinds, ...savedSettings.keybinds };
                     }
                     mainWindow.setContentProtection(savedSettings.contentProtection);
-                    updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, openaiSessionRef);
+                    updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer);
                 })
                 .catch(() => {
                     mainWindow.setContentProtection(true);
-                    updateGlobalShortcuts(defaultKeybinds, mainWindow, sendToRenderer, openaiSessionRef);
+                    updateGlobalShortcuts(defaultKeybinds, mainWindow, sendToRenderer);
                 });
         }, 150);
     });
 
-    setupWindowIpcHandlers(mainWindow, sendToRenderer, openaiSessionRef);
+    setupWindowIpcHandlers(mainWindow, sendToRenderer);
 
     return mainWindow;
 }
@@ -1954,7 +1937,7 @@ function getDefaultKeybinds() {
     };
 }
 
-function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, openaiSessionRef) {
+function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer) {
     console.log('Updating global shortcuts with:', keybinds);
 
     // Unregister all existing shortcuts
@@ -2163,7 +2146,7 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, openaiSessi
     }
 }
 
-function setupWindowIpcHandlers(mainWindow, sendToRenderer, openaiSessionRef) {
+function setupWindowIpcHandlers(mainWindow, sendToRenderer) {
     ipcMain.handle('resize-window', async (event, args) => {
         try {
             const { isMainViewVisible, view } = args;

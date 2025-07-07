@@ -24,7 +24,6 @@ const fetch = require('node-fetch');
 const { autoUpdater } = require('electron-updater');
 const { env } = require('node:process');
 
-const openaiSessionRef = { current: null };
 let deeplink = null; // Initialize as null
 let pendingDeepLinkUrl = null; // Store any deep link that arrives before initialization
 
@@ -148,7 +147,7 @@ app.whenReady().then(async () => {
         console.error('[index.js] Error restoring authenticated user on startup:', error);
     }
     
-    setupLiveSummaryIpcHandlers(openaiSessionRef);
+    setupLiveSummaryIpcHandlers();
     setupGeneralIpcHandlers();
 
     createMainWindows();

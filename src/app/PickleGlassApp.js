@@ -151,7 +151,6 @@ export class PickleGlassApp extends LitElement {
         }
 
         if (window.pickleGlass) {
-            await window.pickleGlass.initializeopenai(this.selectedProfile, this.selectedLanguage);
             window.pickleGlass.startCapture(this.selectedScreenshotInterval, this.selectedImageQuality);
         }
 

@@ -221,9 +221,6 @@ export class ApiKeyHeader extends LitElement {
 
         this.handleMouseMove = this.handleMouseMove.bind(this);
         this.handleMouseUp = this.handleMouseUp.bind(this);
-        this.handleKeyPress = this.handleKeyPress.bind(this);
-        this.handleSubmit = this.handleSubmit.bind(this);
-        this.handleInput = this.handleInput.bind(this);
         this.handleAnimationEnd = this.handleAnimationEnd.bind(this);
         this.handleUseWorkOS = this.handleUseWorkOS.bind(this);
     }
@@ -291,122 +288,11 @@ export class ApiKeyHeader extends LitElement {
         }
     }
 
-    handleInput(e) {
-        this.apiKey = e.target.value;
-        this.errorMessage = '';
-        console.log('Input changed:', this.apiKey?.length || 0, 'chars');
+    // Removed handleInput, handlePaste, and handleKeyPress - no longer using API key input
 
-        this.requestUpdate();
-        this.updateComplete.then(() => {
-            const inputField = this.shadowRoot?.querySelector('.apikey-input');
-            if (inputField && this.isInputFocused) {
-                inputField.focus();
-            }
-        });
-    }
+    // Removed handleSubmit - no longer using API key validation
 
-    handlePaste(e) {
-        e.preventDefault();
-        this.errorMessage = '';
-        const clipboardText = (e.clipboardData || window.clipboardData).getData('text');
-        console.log('Paste event detected:', clipboardText?.substring(0, 10) + '...');
-
-        if (clipboardText) {
-            this.apiKey = clipboardText.trim();
-
-            const inputElement = e.target;
-            inputElement.value = this.apiKey;
-        }
-
-        this.requestUpdate();
-        this.updateComplete.then(() => {
-            const inputField = this.shadowRoot?.querySelector('.apikey-input');
-            if (inputField) {
-                inputField.focus();
-                inputField.setSelectionRange(inputField.value.length, inputField.value.length);
-            }
-        });
-    }
-
-    handleKeyPress(e) {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            this.handleSubmit();
-        }
-    }
-
-    async handleSubmit() {
-        if (this.wasJustDragged || this.isLoading || !this.apiKey.trim()) {
-            console.log('Submit blocked:', {
-                wasJustDragged: this.wasJustDragged,
-                isLoading: this.isLoading,
-                hasApiKey: !!this.apiKey.trim(),
-            });
-            return;
-        }
-
-        console.log('Starting API key validation...');
-        this.isLoading = true;
-        this.errorMessage = '';
-        this.requestUpdate();
-
-        const apiKey = this.apiKey.trim();
-        let isValid = false;
-        try {
-            const isValid = await this.validateApiKey(this.apiKey.trim());
-
-            if (isValid) {
-                console.log('API key valid - starting slide out animation');
-                this.startSlideOutAnimation();
-                this.validatedApiKey = this.apiKey.trim();
-            } else {
-                this.errorMessage = 'Invalid API key - please check and try again';
-                console.log('API key validation failed');
-            }
-        } catch (error) {
-            console.error('API key validation error:', error);
-            this.errorMessage = 'Validation error - please try again';
-        } finally {
-            this.isLoading = false;
-            this.requestUpdate();
-        }
-    }
-
-    async validateApiKey(apiKey) {
-        if (!apiKey || apiKey.length < 15) return false;
-        if (!apiKey.match(/^[A-Za-z0-9_-]+$/)) return false;
-
-        try {
-            console.log('Validating API key with openai models endpoint...');
-
-            const response = await fetch('https://api.openai.com/v1/models', {
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${apiKey}`,
-                },
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-
-                const hasGPTModels = data.data && data.data.some(m => m.id.startsWith('gpt-'));
-                if (hasGPTModels) {
-                    console.log('API key validation successful - GPT models available');
-                    return true;
-                } else {
-                    console.log('API key valid but no GPT models available');
-                    return false;
-                }
-            } else {
-                const errorData = await response.json().catch(() => ({}));
-                console.log('API key validation failed:', response.status, errorData.error?.message || 'Unknown error');
-                return false;
-            }
-        } catch (error) {
-            console.error('API key validation network error:', error);
-            return apiKey.length >= 20; // Fallback for network issues
-        }
-    }
+    // Removed validateApiKey function - no longer using OpenAI API
 
     startSlideOutAnimation() {
         this.classList.add('sliding-out');

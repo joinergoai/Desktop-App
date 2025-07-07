@@ -409,21 +409,7 @@ function stopMacOSAudioCapture() {
     }
 }
 
-async function sendAudioToOpenAI(base64Data, sttSessionRef) {
-    if (!sttSessionRef.current) return;
-
-    try {
-        process.stdout.write('.');
-        await sttSessionRef.current.sendRealtimeInput({
-            audio: {
-                data: base64Data,
-                mimeType: 'audio/pcm;rate=24000',
-            },
-        });
-    } catch (error) {
-        console.error('Error sending audio to OpenAI:', error);
-    }
-}
+// Removed sendAudioToOpenAI function - no longer using OpenAI STT
 
 function isSessionActive() {
     return !!mySttSession && !!theirSttSession;
@@ -464,9 +450,10 @@ function setupLiveSummaryIpcHandlers() {
         return isActive;
     });
 
-    ipcMain.handle('initialize-openai', async (event, profile = 'interview', language = 'en') => {
-        console.log(`Received initialize-openai request with profile: ${profile}, language: ${language}`);
-        const success = await initializeLiveSummarySession();
+    // Initialize STT sessions for speech-to-text
+    ipcMain.handle('initialize-stt-sessions', async (event, language = 'en') => {
+        console.log(`Initializing STT sessions with language: ${language}`);
+        const success = await initializeLiveSummarySession(language);
         return success;
     });
 
@@ -487,6 +474,9 @@ function setupLiveSummaryIpcHandlers() {
         }
         try {
             const success = await startMacOSAudioCapture();
+            if (!success) {
+                return { success: false, error: 'STT session not initialized or system audio capture failed' };
+            }
             return { success };
         } catch (error) {
             console.error('Error starting macOS audio capture:', error);
@@ -558,7 +548,6 @@ module.exports = {
     startMacOSAudioCapture,
     convertStereoToMono,
     stopMacOSAudioCapture,
-    sendAudioToOpenAI,
     setupLiveSummaryIpcHandlers,
     isSessionActive,
     closeSession,

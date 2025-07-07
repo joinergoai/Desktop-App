@@ -452,30 +452,7 @@ function arrayBufferToBase64(buffer) {
     return btoa(binary);
 }
 
-async function initializeopenai(profile = 'interview', language = 'en') {
-    // The API key is now handled in the main process from .env file.
-    // We just need to trigger the initialization.
-    try {
-        console.log(`Requesting OpenAI initialization with profile: ${profile}, language: ${language}`);
-        const success = await ipcRenderer.invoke('initialize-openai', profile, language);
-        if (success) {
-            // The status will be updated via 'update-status' event from the main process.
-            console.log('OpenAI initialization successful.');
-        } else {
-            console.error('OpenAI initialization failed.');
-            const appElement = pickleGlassElement();
-            if (appElement && typeof appElement.setStatus === 'function') {
-                appElement.setStatus('Initialization Failed');
-            }
-        }
-    } catch (error) {
-        console.error('Error during OpenAI initialization IPC call:', error);
-        const appElement = pickleGlassElement();
-        if (appElement && typeof appElement.setStatus === 'function') {
-            appElement.setStatus('Error');
-        }
-    }
-}
+// Removed initializeopenai function - no longer using OpenAI
 
 
 ipcRenderer.on('system-audio-data', (event, { data }) => {
@@ -539,6 +516,22 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
     // Reset token tracker when starting new capture session
     tokenTracker.reset();
     console.log('🎯 Token tracker reset for new capture session');
+
+    // Initialize STT sessions first
+    try {
+        console.log('Initializing STT sessions...');
+        const sttSuccess = await ipcRenderer.invoke('initialize-stt-sessions', 'en');
+        if (!sttSuccess) {
+            console.error('Failed to initialize STT sessions');
+            pickleGlass.e().setStatus('STT initialization failed');
+            return;
+        }
+        console.log('STT sessions initialized successfully');
+    } catch (error) {
+        console.error('Error initializing STT sessions:', error);
+        pickleGlass.e().setStatus('STT initialization error');
+        return;
+    }
 
     try {
         if (isMacOS) {
@@ -893,82 +886,8 @@ async function getCurrentScreenshot() {
     }
 }
 
-function formatRealtimeConversationHistory() {
-    if (realtimeConversationHistory.length === 0) return 'No conversation history available.';
-
-    return realtimeConversationHistory.slice(-30).join('\n');
-}
-
-async function getRagieContext(query) {
-    try {
-        // Get Ragie API key from environment
-        let ragieApiKey = null;
-        
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            try {
-                ragieApiKey = await ipcRenderer.invoke('get-ragie-api-key');
-            } catch (error) {
-                console.warn('Failed to get Ragie API key via IPC:', error);
-            }
-        }
-
-        if (!ragieApiKey) {
-            ragieApiKey = process.env.RAGIE_API_KEY;
-        }
-
-        if (!ragieApiKey) {
-            console.warn('No Ragie API key found - skipping RAG context retrieval');
-            return '';
-        }
-
-        console.log('🔍 Making Ragie API call with query:', query.substring(0, 100) + '...');
-
-        const response = await fetch('https://api.ragie.ai/retrievals', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${ragieApiKey}`,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                query: query,
-                // filter: {
-                //     org_name: "Ergo"
-                // }
-            })
-        });
-
-        if (!response.ok) {
-            throw new Error(`Ragie API error: ${response.status} ${response.statusText}`);
-        }
-
-        const data = await response.json();
-        console.log('📊 Ragie API response received');
-
-        // Extract text from scored chunks
-        if (data.scored_chunks && data.scored_chunks.length > 0) {
-            const contextText = data.scored_chunks
-                .map(chunk => chunk.text)
-                .join('\n\n---\n\n');
-            
-            console.log(`📝 Extracted ${data.scored_chunks.length} chunks from Ragie`);
-            return contextText;
-        }
-
-        return '';
-    } catch (error) {
-        console.error('❌ Ragie API error:', error);
-        throw error;
-    }
-}
-
 async function sendMessage(userPrompt, options = {}) {
     console.log('🚀 sendMessage function called with:', userPrompt);
-    
-    if (!userPrompt || userPrompt.trim().length === 0) {
-        console.warn('Cannot process empty message');
-        return { success: false, error: 'Empty message' };
-    }
 
     if (window.require) {
         const { ipcRenderer } = window.require('electron');
@@ -980,104 +899,54 @@ async function sendMessage(userPrompt, options = {}) {
     }
 
     try {
-        console.log(`🤖 Processing message: ${userPrompt.substring(0, 50)}...`);
+        console.log(`🤖 Processing message request...`);
 
         // 1. Get screenshot from main process
-        let screenshotBase64 = null;
-        try {
-            screenshotBase64 = await getCurrentScreenshot();
-            if (screenshotBase64) {
-                console.log('📸 Screenshot obtained for message request');
-            } else {
-                console.warn('No screenshot available for message request');
-            }
-        } catch (error) {
-            console.warn('Failed to get screenshot:', error);
-        }
+        let imageBase64 = null;
+        // try {
+        //     imageBase64 = await getCurrentScreenshot();
+        //     if (imageBase64) {
+        //         console.log('📸 Screenshot obtained for message request');
+        //     } else {
+        //         console.warn('No screenshot available for message request');
+        //     }
+        // } catch (error) {
+        //     console.warn('Failed to get screenshot:', error);
+        // }
 
-        // 2. Get RAG context from Ragie
-        let ragContext = '';
-        try {
-            console.log('🔍 Retrieving context from Ragie...');
-            const ragieResponse = await getRagieContext(userPrompt.trim());
-            if (ragieResponse && ragieResponse.length > 0) {
-                ragContext = ragieResponse;
-                console.log('✅ RAG context retrieved successfully');
-            } else {
-                console.log('ℹ️ No RAG context found for this query');
-            }
-        } catch (error) {
-            console.error('❌ Failed to retrieve RAG context:', error);
-            // Continue without RAG context
-        }
-
-        const conversationHistory = formatRealtimeConversationHistory();
-        console.log(`📝 Using conversation history: ${realtimeConversationHistory.length} texts`);
-
-        // 3. Build enhanced system prompt with RAG context
-        let enhancedSystemPrompt = PICKLE_GLASS_SYSTEM_PROMPT.replace('{{CONVERSATION_HISTORY}}', conversationHistory);
+        // 2. Prepare conversation history
+        console.log(`📝 Preparing conversation history: ${realtimeConversationHistory.length} entries`);
         
-        if (ragContext) {
-            enhancedSystemPrompt += `
+        // Convert array to string with newline separators for backend
+        const conversationHistoryString = realtimeConversationHistory.join('\n');
 
-═══════════════════════════════════════════════════════════════════════════════
-🎯 CRITICAL CONTEXT FROM YOUR KNOWLEDGE BASE (RAGIE RAG SYSTEM) 🎯
-═══════════════════════════════════════════════════════════════════════════════
+        // 3. Build request payload
+        const requestPayload = {
+            conversationHistory: conversationHistoryString,
+            // image: imageBase64, // Renamed from screenshot to match backend
+            model: 'gpt-4.1',
+            temperature: 0.7,
+            maxTokens: 4096,
+            stream: true, // We always want streaming for this client
+            promptType: 'WHAT_SHOULD_I_SAY_NEXT'
+        };
 
-The following information is DIRECTLY RELEVANT to the user's question and comes from their personal knowledge base. This information should be PRIORITIZED and INTEGRATED into your response:
+        // Note: userPrompt is not sent to backend for now
+        // if (userPrompt && userPrompt.trim().length > 0) {
+        //     requestPayload.userPrompt = userPrompt.trim();
+        //     console.log(`📝 Including user prompt in request`);
+        // }
 
-${ragContext}
-
-═══════════════════════════════════════════════════════════════════════════════
-END OF CRITICAL CONTEXT - Use this information to provide accurate, personalized responses
-═══════════════════════════════════════════════════════════════════════════════
-
-`;
-        }
-
-        const systemPrompt = enhancedSystemPrompt;
-
-        console.log(systemPrompt);
-
-        const messages = [
-            {
-                role: 'system',
-                content: systemPrompt,
-            },
-            {
-                role: 'user',
-                content: [
-                    {
-                        type: 'text',
-                        text: `User Request: ${userPrompt.trim()}`,
-                    },
-                ],
-            },
-        ];
-
-        if (screenshotBase64) {
-            messages[1].content.push({
-                type: 'image_url',
-                image_url: {
-                    url: `data:image/jpeg;base64,${screenshotBase64}`,
-                },
-            });
-            console.log('📷 Screenshot included in message request');
-        }
-
-        console.log('🚀 Sending request to OpenAI...');
+        // 4. Send data to backend
+        console.log('🚀 Sending data to backend for processing...');
+        console.log('📋 Conversation history format:', typeof requestPayload.conversationHistory);
+        console.log('📋 Conversation history preview:', requestPayload.conversationHistory.substring(0, 200) + '...');
         
         // Use IPC to call the authenticated API client in main process
         const { ipcRenderer } = window.require('electron');
         
         // Request streaming chat completion through IPC
-        await ipcRenderer.invoke('chat-completion-start', {
-            model: 'gpt-4.1',
-            messages,
-            temperature: 0.7,
-            max_tokens: 2048,
-            stream: true,
-        });
+        await ipcRenderer.invoke('chat-completion-start', requestPayload);
         let fullResponse = '';
         
         // Set up a promise to handle the streaming response
@@ -1218,7 +1087,6 @@ ipcRenderer.on('save-conversation-session', async (event, data) => {
 initConversationStorage().catch(console.error);
 
 window.pickleGlass = {
-    initializeopenai,
     startCapture,
     stopCapture,
     sendMessage,

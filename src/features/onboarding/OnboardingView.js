@@ -317,7 +317,7 @@ export class OnboardingView extends LitElement {
                 <div class="emoji">🎉</div>
                 <div class="slide-title">You're All Set!</div>
                 <div class="slide-content">
-                    Pickle Glass is completely free to use. Just add your openai API key and start getting AI-powered assistance in your interviews
+                    Pickle Glass is completely free to use. Just sign in and start getting AI-powered assistance in your interviews
                     and meetings!
                 </div>
             </div>
