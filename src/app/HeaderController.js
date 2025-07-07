@@ -201,7 +201,7 @@ class HeaderTransitionManager {
         if (!window.require) return Promise.resolve();
         return window
             .require('electron')
-            .ipcRenderer.invoke('resize-header-window', { width: 380, height: 290 })
+            .ipcRenderer.invoke('resize-header-window', { width: 380, height: 240 })
             .catch(() => {});
     }
 

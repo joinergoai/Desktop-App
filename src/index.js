@@ -228,6 +228,16 @@ function setupGeneralIpcHandlers() {
         return await dataService.getPresetTemplates();
     });
 
+    ipcMain.handle('get-upcoming-calendar-events', async () => {
+        try {
+            const events = await apiClient.getUpcomingCalendarEvents();
+            return { success: true, events };
+        } catch (error) {
+            console.error('[IPC] Failed to get upcoming calendar events:', error);
+            return { success: false, error: error.message, events: [] };
+        }
+    });
+
     ipcMain.handle('get-workos-tokens', async () => {
         try {
             const tokens = await dataService.getWorkOSTokens();

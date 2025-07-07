@@ -272,9 +272,34 @@ class APIClient {
             throw error;
         }
     }
+
+    async getUpcomingCalendarEvents() {
+        try {
+            // Get valid access token (handles refresh automatically)
+            const accessToken = await workosAuth.getAccessToken();
+            
+            const response = await this.client.get('/api/calendar/events/upcoming', {
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`
+                }
+            });
+            
+            // Access the events array from response.data.events
+            const events = response.data.events ? response.data.events.slice(0, 6).map(event => ({
+                title: event.title,
+                startTime: event.startTime,
+                startTimezone: event.startTimezone,
+                participants: event.participants
+            })) : [];
+            
+            return events;
+        } catch (error) {
+            console.error('failed to get upcoming calendar events:', error);
+            return [];
+        }
+    }
 }
 
 const apiClient = new APIClient();
 
-module.exports = apiClient; 
 module.exports = apiClient; 

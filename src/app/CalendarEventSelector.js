@@ -13,6 +13,8 @@ export class CalendarEventSelector extends LitElement {
             display: block;
             transform: translate3d(0, 0, 0);
             backface-visibility: hidden;
+            will-change: opacity;
+            -webkit-font-smoothing: antialiased;
         }
 
         * {
@@ -28,8 +30,11 @@ export class CalendarEventSelector extends LitElement {
             background: rgba(0, 0, 0, 0.3);
             border-radius: 16px;
             backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
             position: relative;
             overflow: hidden;
+            transform: translateZ(0);
+            isolation: isolate;
         }
 
         .container::after {
@@ -57,7 +62,7 @@ export class CalendarEventSelector extends LitElement {
         }
 
         .events-container {
-            max-height: 220px;
+            max-height: 108px;
             overflow-y: auto;
             margin-bottom: 12px;
         }
@@ -195,7 +200,7 @@ export class CalendarEventSelector extends LitElement {
             display: flex;
             align-items: center;
             justify-content: center;
-            height: 120px;
+            height: 108px;
             color: rgba(255, 255, 255, 0.5);
             font-size: 12px;
         }
@@ -204,6 +209,11 @@ export class CalendarEventSelector extends LitElement {
             text-align: center;
             padding: 20px;
             color: rgba(255, 255, 255, 0.4);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 108px;
         }
 
         .empty-state h3 {
@@ -253,49 +263,59 @@ export class CalendarEventSelector extends LitElement {
 
     connectedCallback() {
         super.connectedCallback();
-        // For now, we'll use mock data
-        this.loadMockEvents();
+        // Load real calendar events
+        this.loadCalendarEvents();
     }
 
-    loadMockEvents() {
-        // Mock calendar events for development
-        this.events = [
-            {
-                id: '1',
-                title: 'Team Standup',
-                startTime: new Date(Date.now() + 30 * 60000).toISOString(),
-                endTime: new Date(Date.now() + 60 * 60000).toISOString(),
-                attendees: ['John Doe', 'Jane Smith', 'Bob Johnson']
-            },
-            {
-                id: '2',
-                title: 'Product Review Meeting',
-                startTime: new Date(Date.now() + 2 * 3600000).toISOString(),
-                endTime: new Date(Date.now() + 3 * 3600000).toISOString(),
-                attendees: ['Alice Brown', 'Charlie Davis']
-            },
-            {
-                id: '3',
-                title: '1:1 with Manager',
-                startTime: new Date(Date.now() + 4 * 3600000).toISOString(),
-                endTime: new Date(Date.now() + 4.5 * 3600000).toISOString(),
-                attendees: ['Sarah Wilson']
+    async loadCalendarEvents() {
+        this.loading = true;
+        this.error = null;
+        
+        try {
+            if (window.require) {
+                const { ipcRenderer } = window.require('electron');
+                const result = await ipcRenderer.invoke('get-upcoming-calendar-events');
+                
+                if (result.success && result.events) {
+                    this.events = result.events;
+                } else {
+                    this.error = result.error || 'Failed to load calendar events';
+                    this.events = [];
+                }
+            } else {
+                // No Electron environment
+                this.error = 'Calendar events require desktop app';
+                this.events = [];
             }
-        ];
+        } catch (error) {
+            console.error('Error loading calendar events:', error);
+            this.error = 'Failed to load calendar events';
+            this.events = [];
+        } finally {
+            this.loading = false;
+        }
     }
 
-    formatTime(isoString) {
-        const date = new Date(isoString);
+    formatTime(timestamp, timezone) {
+        // Convert unix timestamp to milliseconds if needed
+        const timestampMs = timestamp < 10000000000 ? timestamp * 1000 : timestamp;
+        const date = new Date(timestampMs);
+        
         return date.toLocaleTimeString('en-US', { 
             hour: 'numeric', 
             minute: '2-digit',
-            hour12: true 
+            hour12: true,
+            timeZone: timezone || undefined
         });
     }
 
-    formatDateRange(startIso, endIso) {
-        const start = new Date(startIso);
-        const end = new Date(endIso);
+    formatDateRange(startTimestamp, endTimestamp) {
+        // Convert unix timestamps to milliseconds if needed
+        const startMs = startTimestamp < 10000000000 ? startTimestamp * 1000 : startTimestamp;
+        const endMs = endTimestamp < 10000000000 ? endTimestamp * 1000 : endTimestamp;
+        
+        const start = new Date(startMs);
+        const end = new Date(endMs);
         const today = new Date();
         
         const isToday = start.toDateString() === today.toDateString();
@@ -305,7 +325,7 @@ export class CalendarEventSelector extends LitElement {
             day: 'numeric' 
         });
         
-        return `${dateStr}, ${this.formatTime(startIso)} - ${this.formatTime(endIso)}`;
+        return `${dateStr}, ${this.formatTime(startTimestamp)} - ${this.formatTime(endTimestamp)}`;
     }
 
     async handleMouseDown(e) {
@@ -365,7 +385,7 @@ export class CalendarEventSelector extends LitElement {
 
     selectEvent(event) {
         if (this.wasJustDragged) return;
-        this.selectedEvent = this.selectedEvent?.id === event.id ? null : event;
+        this.selectedEvent = this.selectedEvent?.title === event.title ? null : event;
     }
 
     handleContinue() {
@@ -413,6 +433,11 @@ export class CalendarEventSelector extends LitElement {
                 <div class="events-container">
                     ${this.loading ? html`
                         <div class="loading">Loading events...</div>
+                    ` : this.error ? html`
+                        <div class="empty-state">
+                            <h3>Error loading events</h3>
+                            <p>${this.error}</p>
+                        </div>
                     ` : this.events.length === 0 ? html`
                         <div class="empty-state">
                             <h3>No upcoming events</h3>
@@ -420,11 +445,11 @@ export class CalendarEventSelector extends LitElement {
                         </div>
                     ` : this.events.map(event => html`
                         <div 
-                            class="event-card ${this.selectedEvent?.id === event.id ? 'selected' : ''}"
+                            class="event-card ${this.selectedEvent?.title === event.title && this.selectedEvent?.startTime === event.startTime ? 'selected' : ''}"
                             @click=${() => this.selectEvent(event)}
                         >
                             <span class="event-title">${event.title}</span>
-                            <span class="event-time">${this.formatTime(event.startTime)}</span>
+                            <span class="event-time">${this.formatTime(event.startTime, event.startTimezone)}</span>
                         </div>
                     `)}
                 </div>
