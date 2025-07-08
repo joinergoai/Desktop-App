@@ -201,12 +201,12 @@ export class AskView extends LitElement {
         }
 
         .question-text {
-            font-size: 13px;
+            font-size: 12px;
             color: rgba(255, 255, 255, 0.7);
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-            max-width: 300px;
+            max-width: 150px;
             margin-right: 8px;
         }
 
@@ -286,15 +286,17 @@ export class AskView extends LitElement {
 
         .response-container {
             flex: 1;
-            padding: 16px;
-            padding-left: 48px;
+            padding: 12px;
+            padding-left: 32px;
             overflow-y: auto;
-            font-size: 14px;
-            line-height: 1.6;
+            font-size: 13px;
+            line-height: 1.5;
             background: transparent;
-            min-height: 0;
-            max-height: 400px;
+            min-height: 60px;
+            max-height: 167px;
             position: relative;
+            transition: max-height 0.3s ease;
+            scrollbar-gutter: stable;
         }
 
         .response-container.hidden {
@@ -302,21 +304,22 @@ export class AskView extends LitElement {
         }
 
         .response-container::-webkit-scrollbar {
-            width: 6px;
+            width: 8px;
         }
 
         .response-container::-webkit-scrollbar-track {
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 3px;
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 4px;
         }
 
         .response-container::-webkit-scrollbar-thumb {
-            background: rgba(255, 255, 255, 0.2);
-            border-radius: 3px;
+            background: rgba(255, 255, 255, 0.25);
+            border-radius: 4px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
         }
 
         .response-container::-webkit-scrollbar-thumb:hover {
-            background: rgba(255, 255, 255, 0.3);
+            background: rgba(255, 255, 255, 0.35);
         }
 
         .loading-dots {
@@ -374,7 +377,7 @@ export class AskView extends LitElement {
 
         .line-copy-button {
             position: absolute;
-            left: -32px;
+            left: -24px;
             top: 50%;
             transform: translateY(-50%);
             background: rgba(255, 255, 255, 0.1);
@@ -387,8 +390,8 @@ export class AskView extends LitElement {
             display: flex;
             align-items: center;
             justify-content: center;
-            width: 20px;
-            height: 20px;
+            width: 16px;
+            height: 16px;
         }
 
         .response-line:hover .line-copy-button {
@@ -404,8 +407,8 @@ export class AskView extends LitElement {
         }
 
         .line-copy-button svg {
-            width: 12px;
-            height: 12px;
+            width: 10px;
+            height: 10px;
             stroke: rgba(255, 255, 255, 0.9);
         }
 
@@ -1300,12 +1303,13 @@ export class AskView extends LitElement {
             if (!headerEl || !responseEl) return;
 
             const headerHeight   = headerEl.classList.contains('hidden') ? 0 : headerEl.offsetHeight;
-            const responseHeight = responseEl.scrollHeight;
+            // Use the actual visible height (offsetHeight) instead of scrollHeight when content overflows
+            const responseHeight = Math.min(responseEl.scrollHeight, 167); // Respect max-height
             const inputHeight    = (inputEl && !inputEl.classList.contains('hidden')) ? inputEl.offsetHeight : 0;
 
             const idealHeight = headerHeight + responseHeight + inputHeight + 20; // padding
 
-            const targetHeight = Math.min(700, Math.max(200, idealHeight));
+            const targetHeight = Math.min(233, Math.max(120, idealHeight));
 
             const { ipcRenderer } = window.require('electron');
             ipcRenderer.invoke('adjust-window-height', targetHeight);

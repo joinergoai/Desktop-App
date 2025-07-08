@@ -7,6 +7,7 @@ class DataService {
         this.enableCaching = config.get('enableCaching');
         this.sqliteClient = null;
         this.currentUserId = null;
+        this.currentCalendarEvent = null;  // Store selected calendar event
         this.isInitialized = false;
 
         if (config.get('enableSQLiteStorage')) {
@@ -38,8 +39,28 @@ class DataService {
         if (this.currentUserId !== uid) {
             console.log(`[DataService] Current user switched to: ${uid}`);
             this.currentUserId = uid;
+            this.currentCalendarEvent = null;  // Clear calendar event on user switch
             this.clearCache();
         }
+    }
+
+    setCurrentCalendarEvent(event) {
+        this.currentCalendarEvent = event;
+        
+        if (event) {
+            console.log('[DataService] Calendar event saved:', {
+                title: event.title,
+                startTime: event.startTime,
+                startTimezone: event.startTimezone,
+                participants: event.participants,
+            });
+        } else {
+            console.log('[DataService] Calendar event cleared');
+        }
+    }
+
+    getCurrentCalendarEvent() {
+        return this.currentCalendarEvent;
     }
 
     getCacheKey(operation, params = '') {

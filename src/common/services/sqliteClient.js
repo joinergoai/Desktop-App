@@ -120,6 +120,8 @@ class SQLiteClient {
 
     async initDefaultData() {
         return new Promise((resolve, reject) => {
+            // Commented out default preset creation - no longer used
+            /*
             const now = Math.floor(Date.now() / 1000);
             // Remove default user creation - only authenticated users allowed
 
@@ -149,6 +151,11 @@ class SQLiteClient {
                 console.log('Default presets initialized.');
                 resolve();
             });
+            */
+            
+            // Just resolve immediately since we're not creating any default data
+            console.log('Skipping default data initialization.');
+            resolve();
         });
     }
 

@@ -11,7 +11,7 @@ export class CustomizeView extends LitElement {
         :host {
             display: block;
             width: 200px;
-            min-height: 200px;
+            height: 100%;
             color: white;
         }
 
@@ -27,8 +27,10 @@ export class CustomizeView extends LitElement {
             box-sizing: border-box;
             position: relative;
             overflow-y: auto;
-            padding: 12px 12px;
+            overflow-x: hidden;
+            padding: 12px;
             z-index: 1000;
+            max-height: 100vh;
         }
 
         .settings-container::-webkit-scrollbar {
@@ -76,10 +78,12 @@ export class CustomizeView extends LitElement {
             display: flex;
             justify-content: space-between;
             align-items: flex-start;
-            padding-bottom: 6px;
+            padding-bottom: 4px;
+            margin-bottom: 2px;
             border-bottom: 1px solid rgba(255, 255, 255, 0.1);
             position: relative;
             z-index: 1;
+            flex-shrink: 0;
         }
 
         .title-line {
@@ -123,6 +127,7 @@ export class CustomizeView extends LitElement {
             padding: 4px 0;
             position: relative;
             z-index: 1;
+            flex-shrink: 0;
         }
 
         .shortcut-item {
@@ -167,7 +172,8 @@ export class CustomizeView extends LitElement {
             border-top: 1px solid rgba(255, 255, 255, 0.1);
             position: relative;
             z-index: 1;
-            flex: 1;
+            flex-shrink: 0;
+            margin-bottom: 8px;
         }
 
         .settings-button {
@@ -925,7 +931,7 @@ export class CustomizeView extends LitElement {
                 </div>
 
                 <div class="shortcuts-section">
-                    <h3 style="color: white; font-size: 12px; margin: 12px 0 8px 0; font-weight: 500;">Keyboard Shortcuts</h3>
+                    <h3 style="color: white; font-size: 12px; margin: 6px 0 4px 0; font-weight: 500;">Keyboard Shortcuts</h3>
                     ${this.getMainShortcuts().map(shortcut => html`
                         <div class="shortcut-item">
                             <span class="shortcut-name">${shortcut.name}</span>
@@ -952,6 +958,9 @@ export class CustomizeView extends LitElement {
                 </div>
                 
                 <div class="buttons-section">
+                    <button class="settings-button full-width" @click=${this.handleOpenTranscript}>
+                        [DEBUG] see transcript
+                    </button>
                     <div class="bottom-buttons">
                         <button class="settings-button half-width danger" @click=${this.handleLogout}>
                             Log Out
@@ -974,6 +983,14 @@ export class CustomizeView extends LitElement {
             { name: 'Move Right', key: '→' },
             { name: 'Ask Assistant', key: 'Enter' },
         ];
+    }
+
+    async handleOpenTranscript() {
+        console.log('Opening transcript window');
+        if (window.require) {
+            const { ipcRenderer } = window.require('electron');
+            await ipcRenderer.invoke('open-transcript-window');
+        }
     }
 
     async handleLogout() {

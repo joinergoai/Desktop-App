@@ -88,6 +88,10 @@ class HeaderTransitionManager {
             console.log('[HeaderController] Received request to sign out.');
             this.isWorkOSAuthenticated = false;
             this.selectedCalendarEvent = null;
+            
+            // Clear the event in dataService via IPC
+            ipcRenderer.send('set-calendar-event', null);
+            
             this.transitionToLoginHeader();
         });
 
@@ -95,12 +99,20 @@ class HeaderTransitionManager {
         ipcRenderer.on('calendar-event-selected', (event, calendarEvent) => {
             console.log('[HeaderController] Calendar event selected:', calendarEvent);
             this.selectedCalendarEvent = calendarEvent;
+            
+            // Store the event in dataService via IPC
+            ipcRenderer.send('set-calendar-event', calendarEvent);
+            
             this.transitionToAppHeader(true);
         });
 
         ipcRenderer.on('calendar-event-skipped', () => {
             console.log('[HeaderController] Calendar event selection skipped');
             this.selectedCalendarEvent = null;
+            
+            // Clear the event in dataService via IPC
+            ipcRenderer.send('set-calendar-event', null);
+            
             this.transitionToAppHeader(true);
         });
     }
@@ -111,12 +123,26 @@ class HeaderTransitionManager {
         this.calendarEventSelector.addEventListener('event-selected', (e) => {
             console.log('[HeaderController] Calendar event selected via DOM:', e.detail.event);
             this.selectedCalendarEvent = e.detail.event;
+            
+            // Store the event in dataService via IPC
+            if (window.require) {
+                const { ipcRenderer } = window.require('electron');
+                ipcRenderer.send('set-calendar-event', e.detail.event);
+            }
+            
             this.transitionToAppHeader(true);
         });
 
         this.calendarEventSelector.addEventListener('selection-skipped', () => {
             console.log('[HeaderController] Calendar event selection skipped via DOM');
             this.selectedCalendarEvent = null;
+            
+            // Clear the event in dataService via IPC
+            if (window.require) {
+                const { ipcRenderer } = window.require('electron');
+                ipcRenderer.send('set-calendar-event', null);
+            }
+            
             this.transitionToAppHeader(true);
         });
     }

@@ -349,6 +349,17 @@ function setupGeneralIpcHandlers() {
         }
     });
 
+    ipcMain.on('set-calendar-event', (event, calendarEvent) => {
+        console.log('[IPC] Setting calendar event:', calendarEvent ? calendarEvent.title : 'none');
+        dataService.setCurrentCalendarEvent(calendarEvent);
+    });
+
+    ipcMain.handle('get-calendar-event', async () => {
+        const event = dataService.getCurrentCalendarEvent();
+        console.log('[IPC] Getting calendar event:', event ? event.title : 'none');
+        return event;
+    });
+
     ipcMain.handle('get-api-url', () => {
         return process.env.BACKEND_URL;
     });

@@ -25,6 +25,9 @@ let settingsHideTimer = null;
 
 let selectedCaptureSourceId = null;
 
+let transcriptData = [];
+let transcriptWindow = null;
+
 const windowDefinitions = {
     header: {
         file: 'header.html',
@@ -75,8 +78,8 @@ function createFeatureWindows(header) {
 
     // listen
     const listen = new BrowserWindow({
-        ...commonChildOptions, width:400,height:300,minWidth:400,maxWidth:400,
-        minHeight:200,maxHeight:700,
+        ...commonChildOptions, width:200,height:96,minWidth:150,maxWidth:300,
+        minHeight:125, maxHeight:400,
     });
     listen.setContentProtection(isContentProtectionOn);
     listen.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true});
@@ -84,7 +87,7 @@ function createFeatureWindows(header) {
     windowPool.set('listen', listen);
 
     // ask
-    const ask = new BrowserWindow({ ...commonChildOptions, width:600, height:350 });
+    const ask = new BrowserWindow({ ...commonChildOptions, width:400, height:233, minWidth:350, maxWidth:500, minHeight:120, maxHeight:233 });
     ask.setContentProtection(isContentProtectionOn);
     ask.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true});
     ask.loadFile(path.join(__dirname,'../app/content.html'),{query:{view:'ask'}});
@@ -92,7 +95,7 @@ function createFeatureWindows(header) {
     windowPool.set('ask', ask);
 
     // settings
-    const settings = new BrowserWindow({ ...commonChildOptions, width:240, height:450, parent:undefined });
+    const settings = new BrowserWindow({ ...commonChildOptions, width:240, height:480, parent:undefined });
     settings.setContentProtection(isContentProtectionOn);
     settings.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true});
     settings.loadFile(path.join(__dirname,'../app/content.html'),{query:{view:'customize'}})
@@ -236,9 +239,9 @@ class WindowLayoutManager {
             const combinedWidth = listenBounds.width + PAD + askBounds.width;
 
             /* ② 모든 X 좌표를 상대좌표로 계산 */
-            let groupStartXRel = headerCenterXRel - combinedWidth / 2;
-            let listenXRel = groupStartXRel;
-            let askXRel = groupStartXRel + listenBounds.width + PAD;
+            // Left-align listen window with header
+            let listenXRel = headerBounds.x - workAreaX;
+            let askXRel = listenXRel + listenBounds.width + PAD;
 
             /* 좌우 화면 여백 클램프 – 역시 상대좌표로 */
             if (listenXRel < PAD) {
@@ -286,7 +289,17 @@ class WindowLayoutManager {
             const winBounds = askVisible ? askBounds : listenBounds;
 
             /* X, Y 둘 다 상대좌표로 계산 */
-            let xRel = headerCenterXRel - winBounds.width / 2;
+            // For listen window (assistant pills), left-align with header
+            // For ask window, keep centered
+            let xRel;
+            if (win === listen) {
+                // Left-align with header
+                xRel = headerBounds.x - workAreaX;
+            } else {
+                // Center under header (for ask window)
+                xRel = headerCenterXRel - winBounds.width / 2;
+            }
+            
             let yRel;
             switch (strategy.primary) {
                 case 'below':
@@ -1054,6 +1067,14 @@ function createWindows() {
                         setTimeout(() => {
                             if (!askWindow.isDestroyed()) {
                                 askWindow.hide();
+                                
+                                // Show the listen window (pills) when ask closes
+                                const listenWindow = windowPool.get('listen');
+                                if (listenWindow && !listenWindow.isDestroyed()) {
+                                    listenWindow.show();
+                                    listenWindow.webContents.send('window-show-animation');
+                                }
+                                
                                 updateLayout();
                             }
                         }, 250);
@@ -1065,6 +1086,13 @@ function createWindows() {
                 }
             } else {
                 console.log('[WindowManager] Showing hidden Ask window');
+                
+                // Hide the listen window (pills) when ask opens
+                const listenWindow = windowPool.get('listen');
+                if (listenWindow && !listenWindow.isDestroyed() && listenWindow.isVisible()) {
+                    listenWindow.hide();
+                }
+                
                 askWindow.show();
                 updateLayout();
                 askWindow.webContents.send('window-show-animation');
@@ -1115,9 +1143,26 @@ function createWindows() {
 
     ipcMain.handle('send-question-to-ask', (event, question) => {
         const askWindow = windowPool.get('ask');
+        const listenWindow = windowPool.get('listen');
+        
         if (askWindow && !askWindow.isDestroyed()) {
             console.log('📨 Main process: Sending question to AskView', question);
+            
+            // Hide the listen window (pills) when ask opens
+            if (listenWindow && !listenWindow.isDestroyed() && listenWindow.isVisible()) {
+                listenWindow.hide();
+            }
+            
+            // Show ask window if hidden
+            if (!askWindow.isVisible()) {
+                askWindow.show();
+            }
+            
             askWindow.webContents.send('receive-question-from-assistant', question);
+            
+            // Update layout to center ask window
+            updateLayout();
+            
             return { success: true };
         } else {
             console.error('❌ Cannot find AskView window');
@@ -1600,6 +1645,16 @@ function setupIpcHandlers() {
             setTimeout(() => {
                 if (!window.isDestroyed()) {
                     window.hide();
+                    
+                    // Show the listen window (pills) when ask closes
+                    if (windowName === 'ask') {
+                        const listenWindow = windowPool.get('listen');
+                        if (listenWindow && !listenWindow.isDestroyed()) {
+                            listenWindow.show();
+                            listenWindow.webContents.send('window-show-animation');
+                        }
+                    }
+                    
                     updateLayout();
                 }
             }, 250);
@@ -1715,6 +1770,61 @@ function setupIpcHandlers() {
                 success: false,
                 error: error.message,
             };
+        }
+    });
+
+    // Transcript window handlers
+    ipcMain.handle('open-transcript-window', async () => {
+        if (transcriptWindow && !transcriptWindow.isDestroyed()) {
+            transcriptWindow.focus();
+            return;
+        }
+
+        transcriptWindow = new BrowserWindow({
+            width: 600,
+            height: 500,
+            minWidth: 400,
+            minHeight: 300,
+            frame: true,
+            transparent: false,
+            hasShadow: true,
+            skipTaskbar: false,
+            alwaysOnTop: false,
+            resizable: true,
+            webPreferences: {
+                nodeIntegration: true,
+                contextIsolation: false,
+            },
+            title: 'Transcript'
+        });
+
+        transcriptWindow.setContentProtection(isContentProtectionOn);
+        transcriptWindow.loadFile(path.join(__dirname, '../app/transcript.html'));
+
+        transcriptWindow.on('closed', () => {
+            transcriptWindow = null;
+        });
+
+        // Send initial transcript data when window is ready
+        transcriptWindow.webContents.once('dom-ready', () => {
+            if (transcriptData.length > 0) {
+                transcriptWindow.webContents.send('stt-update', { messages: transcriptData });
+            }
+        });
+    });
+
+    ipcMain.handle('get-transcript-data', async () => {
+        return transcriptData;
+    });
+
+    ipcMain.handle('update-transcript-data', async (event, data) => {
+        if (data && data.messages) {
+            transcriptData = data.messages;
+            
+            // If transcript window is open, update it
+            if (transcriptWindow && !transcriptWindow.isDestroyed()) {
+                transcriptWindow.webContents.send('stt-update', data);
+            }
         }
     });
 }
