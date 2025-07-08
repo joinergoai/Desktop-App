@@ -96,12 +96,15 @@ class HeaderTransitionManager {
         });
 
         // Calendar event handlers
-        ipcRenderer.on('calendar-event-selected', (event, calendarEvent) => {
+        ipcRenderer.on('calendar-event-selected', async (event, calendarEvent) => {
             console.log('[HeaderController] Calendar event selected:', calendarEvent);
             this.selectedCalendarEvent = calendarEvent;
             
             // Store the event in dataService via IPC
             ipcRenderer.send('set-calendar-event', calendarEvent);
+            
+            // Perform CRM lookup before transitioning
+            await this._performCRMLookup(calendarEvent);
             
             this.transitionToAppHeader(true);
         });
@@ -120,7 +123,7 @@ class HeaderTransitionManager {
     _setupCalendarEventHandlers() {
         if (!this.calendarEventSelector) return;
 
-        this.calendarEventSelector.addEventListener('event-selected', (e) => {
+        this.calendarEventSelector.addEventListener('event-selected', async (e) => {
             console.log('[HeaderController] Calendar event selected via DOM:', e.detail.event);
             this.selectedCalendarEvent = e.detail.event;
             
@@ -129,6 +132,9 @@ class HeaderTransitionManager {
                 const { ipcRenderer } = window.require('electron');
                 ipcRenderer.send('set-calendar-event', e.detail.event);
             }
+            
+            // Perform CRM lookup before transitioning
+            await this._performCRMLookup(e.detail.event);
             
             this.transitionToAppHeader(true);
         });
@@ -141,10 +147,41 @@ class HeaderTransitionManager {
             if (window.require) {
                 const { ipcRenderer } = window.require('electron');
                 ipcRenderer.send('set-calendar-event', null);
+                ipcRenderer.send('set-deal-info', null);
             }
             
             this.transitionToAppHeader(true);
         });
+    }
+
+    async _performCRMLookup(calendarEvent) {
+        if (!calendarEvent || !calendarEvent.participants) {
+            console.log('[HeaderController] Skipping CRM lookup - missing requirements');
+            return;
+        }
+
+        try {
+            // Show loading state on calendar selector
+            if (this.calendarEventSelector) {
+                this.calendarEventSelector.loading = true;
+                this.calendarEventSelector.requestUpdate();
+            }
+
+            // Perform CRM lookup via IPC
+            const { ipcRenderer } = window.require('electron');
+            const dealInfo = await ipcRenderer.invoke('perform-crm-lookup', calendarEvent);
+            
+            console.log('[HeaderController] CRM lookup complete, deal info:', dealInfo);
+
+        } catch (error) {
+            console.error('[HeaderController] Error during CRM lookup:', error);
+        } finally {
+            // Remove loading state
+            if (this.calendarEventSelector) {
+                this.calendarEventSelector.loading = false;
+                this.calendarEventSelector.requestUpdate();
+            }
+        }
     }
 
     async _bootstrap() {

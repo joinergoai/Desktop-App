@@ -298,6 +298,38 @@ class APIClient {
             return [];
         }
     }
+
+    async getCRMDealByEmail(email) {
+        try {
+            console.log(`[APIClient] Getting CRM deal for email: ${email}`);
+            const accessToken = await workosAuth.getAccessToken();
+            
+            const url = '/api/desktop/crm/deal-by-email';
+            console.log(`[APIClient] Making request to: ${this.baseURL}${url}`);
+            
+            const response = await this.client.get(url, {
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`
+                },
+                params: { email }
+            });
+            
+            console.log(`[APIClient] CRM response received:`, response.data);
+            return response.data;
+        } catch (error) {
+            console.error('[APIClient] Failed to get CRM deal by email:', error.message);
+            if (error.response) {
+                console.error('[APIClient] Response status:', error.response.status);
+                console.error('[APIClient] Response data:', error.response.data);
+            }
+            // Return error response in expected format
+            return {
+                success: false,
+                dealFound: false,
+                dealInfo: null
+            };
+        }
+    }
 }
 
 const apiClient = new APIClient();

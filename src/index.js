@@ -354,10 +354,140 @@ function setupGeneralIpcHandlers() {
         dataService.setCurrentCalendarEvent(calendarEvent);
     });
 
+    ipcMain.on('set-deal-info', (event, dealInfo) => {
+        console.log('[IPC] Setting deal info:', dealInfo ? { success: dealInfo.success, email: dealInfo.email } : 'none');
+        dataService.setCurrentDealInfo(dealInfo);
+    });
+
     ipcMain.handle('get-calendar-event', async () => {
         const event = dataService.getCurrentCalendarEvent();
         console.log('[IPC] Getting calendar event:', event ? event.title : 'none');
         return event;
+    });
+
+    ipcMain.handle('get-deal-info', async () => {
+        const dealInfo = dataService.getCurrentDealInfo();
+        console.log('[IPC] Getting deal info:', dealInfo ? { success: dealInfo.success, email: dealInfo.email } : 'none');
+        return dealInfo;
+    });
+
+    ipcMain.handle('get-authenticated-user', async () => {
+        try {
+            const user = dataService.currentUserId ? await dataService.sqliteClient.getUser(dataService.currentUserId) : null;
+            
+            if (user) {
+                return {
+                    uid: user.uid,
+                    email: user.email,
+                    display_name: user.display_name
+                };
+            }
+            
+            return null;
+        } catch (error) {
+            console.error('[IPC] Failed to get authenticated user:', error);
+            return null;
+        }
+    });
+
+    ipcMain.handle('perform-crm-lookup', async (event, calendarEvent) => {
+        console.log('[IPC] perform-crm-lookup called with event:', calendarEvent ? calendarEvent.title : 'no event');
+        try {
+            if (!calendarEvent || !calendarEvent.participants) {
+                console.log('[IPC] Skipping CRM lookup - no participants');
+                return null;
+            }
+
+            console.log('[IPC] Calendar event participants:', calendarEvent.participants);
+
+            // Get authenticated user's email/domain
+            const user = dataService.currentUserId ? await dataService.sqliteClient.getUser(dataService.currentUserId) : null;
+            console.log('[IPC] Current user:', user ? { email: user.email, uid: user.uid } : 'no user');
+            
+            const userDomain = user?.email ? user.email.split('@')[1] : null;
+
+            if (!userDomain) {
+                console.warn('[IPC] Could not determine user domain');
+                dataService.setCurrentDealInfo(null);
+                return null;
+            }
+
+            console.log('[IPC] User domain:', userDomain);
+
+            // Extract participant emails (excluding user's domain)
+            const participantEmails = calendarEvent.participants
+                .map(p => p.email)
+                .filter(email => {
+                    const domain = email.split('@')[1];
+                    return domain !== userDomain;
+                });
+
+            console.log('[IPC] Found participant emails for CRM lookup:', participantEmails);
+
+            if (participantEmails.length === 0) {
+                console.log('[IPC] No external participants found');
+                const noDealInfo = {
+                    success: true,  // API call succeeded
+                    dealFound: false,
+                    dealInfo: null,
+                    email: null
+                };
+                dataService.setCurrentDealInfo(noDealInfo);
+                return noDealInfo;
+            }
+
+            let dealInfo = null;
+
+            // Try each email until we find a deal (success=true AND dealFound=true)
+            for (const email of participantEmails) {
+                console.log(`[IPC] Attempting CRM lookup for: ${email}`);
+                const response = await apiClient.getCRMDealByEmail(email);
+                console.log(`[IPC] CRM response for ${email}:`, response);
+                
+                // Check if API call was successful AND a deal was found
+                if (response.success && response.dealFound && response.dealInfo) {
+                    // Found a deal! Add the email to the response
+                    dealInfo = {
+                        ...response,
+                        email: email  // Track which email had the deal
+                    };
+                    console.log(`[IPC] Found deal for email: ${email}`);
+                    break;
+                } else if (response.success && !response.dealFound) {
+                    console.log(`[IPC] No deal found for email: ${email}, trying next...`);
+                } else {
+                    console.log(`[IPC] API call failed for email: ${email}, trying next...`);
+                }
+            }
+
+            // If no deal was found after trying all emails
+            if (!dealInfo) {
+                console.log('[IPC] No deals found after checking all participant emails');
+                dealInfo = {
+                    success: true,  // API calls succeeded
+                    dealFound: false,
+                    dealInfo: null,
+                    email: null
+                };
+            }
+
+            // Save to dataService
+            dataService.setCurrentDealInfo(dealInfo);
+            console.log('[IPC] Final deal info stored:', dealInfo);
+            
+            return dealInfo;
+        } catch (error) {
+            console.error('[IPC] Error during CRM lookup:', error);
+            console.error('[IPC] Error stack:', error.stack);
+            const errorInfo = {
+                success: false,
+                dealFound: false,
+                dealInfo: null,
+                email: null
+            };
+            dataService.setCurrentDealInfo(errorInfo);
+            return errorInfo;
+        }
     });
 
     ipcMain.handle('get-api-url', () => {

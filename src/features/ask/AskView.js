@@ -1059,7 +1059,24 @@ export class AskView extends LitElement {
         this.requestUpdate();
         this.renderContent();
 
-        window.pickleGlass.sendMessage(question).catch(error => {
+        // Determine the promptType based on the question
+        let promptType;
+        switch (question) {
+            case 'What should I say next?':
+                promptType = 'WHAT_SHOULD_I_SAY_NEXT';
+                break;
+            case 'Deal context':
+                promptType = 'DEAL_CONTEXT';
+                break;
+            case 'Explain':
+                promptType = 'EXPLAIN';
+                break;
+            default:
+                promptType = 'ASK'; // General purpose ask for user-typed questions
+                break;
+        }
+        
+        window.pickleGlass.sendMessage(question, { promptType }).catch(error => {
             console.error('Error processing assistant question:', error);
             this.isLoading = false;
             this.isStreaming = false;
@@ -1155,7 +1172,8 @@ export class AskView extends LitElement {
         this.requestUpdate();
         this.renderContent();
 
-        window.pickleGlass.sendMessage(text).catch(error => {
+        // User-typed questions always use the 'ASK' prompt type
+        window.pickleGlass.sendMessage(text, { promptType: 'ASK' }).catch(error => {
             console.error('Error sending text:', error);
             this.isLoading = false;
             this.isStreaming = false;

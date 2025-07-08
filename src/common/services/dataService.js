@@ -8,6 +8,7 @@ class DataService {
         this.sqliteClient = null;
         this.currentUserId = null;
         this.currentCalendarEvent = null;  // Store selected calendar event
+        this.currentDealInfo = null;       // Store CRM deal info
         this.isInitialized = false;
 
         if (config.get('enableSQLiteStorage')) {
@@ -40,6 +41,7 @@ class DataService {
             console.log(`[DataService] Current user switched to: ${uid}`);
             this.currentUserId = uid;
             this.currentCalendarEvent = null;  // Clear calendar event on user switch
+            this.currentDealInfo = null;       // Clear deal info on user switch
             this.clearCache();
         }
     }
@@ -61,6 +63,30 @@ class DataService {
 
     getCurrentCalendarEvent() {
         return this.currentCalendarEvent;
+    }
+
+    setCurrentDealInfo(dealInfo) {
+        this.currentDealInfo = dealInfo;
+        
+        if (dealInfo) {
+            if (dealInfo.success && dealInfo.dealFound) {
+                console.log('[DataService] CRM deal found and saved:', {
+                    email: dealInfo.email,
+                    dealFound: true,
+                    hasDealInfo: !!dealInfo.dealInfo
+                });
+            } else if (dealInfo.success && !dealInfo.dealFound) {
+                console.log('[DataService] CRM lookup successful but no deal found');
+            } else {
+                console.log('[DataService] CRM lookup failed');
+            }
+        } else {
+            console.log('[DataService] CRM deal info cleared');
+        }
+    }
+
+    getCurrentDealInfo() {
+        return this.currentDealInfo;
     }
 
     getCacheKey(operation, params = '') {

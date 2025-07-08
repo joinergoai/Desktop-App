@@ -887,7 +887,7 @@ async function getCurrentScreenshot() {
 }
 
 async function sendMessage(userPrompt, options = {}) {
-    console.log('🚀 sendMessage function called with:', userPrompt);
+    console.log('🚀 sendMessage function called with:', userPrompt, 'options:', options);
 
     if (window.require) {
         const { ipcRenderer } = window.require('electron');
@@ -901,7 +901,6 @@ async function sendMessage(userPrompt, options = {}) {
     try {
         console.log(`🤖 Processing message request...`);
 
-        // 1. Get screenshot from main process
         let imageBase64 = null;
         // try {
         //     imageBase64 = await getCurrentScreenshot();
@@ -914,38 +913,46 @@ async function sendMessage(userPrompt, options = {}) {
         //     console.warn('Failed to get screenshot:', error);
         // }
 
-        // 2. Prepare conversation history
         console.log(`📝 Preparing conversation history: ${realtimeConversationHistory.length} entries`);
-        
-        // Convert array to string with newline separators for backend
         const conversationHistoryString = realtimeConversationHistory.join('\n');
 
-        // 3. Build request payload
+        let dealContext = null;
+        try {
+            const { ipcRenderer } = window.require('electron');
+            const dealInfo = await ipcRenderer.invoke('get-deal-info');
+            if (dealInfo && dealInfo.dealFound && dealInfo.dealInfo) {
+                dealContext = dealInfo.dealInfo;
+                console.log('💼 Deal context obtained for message request');
+            } else {
+                console.log('💼 No deal context available');
+            }
+        } catch (error) {
+            console.warn('Failed to get deal context:', error);
+        }
+
         const requestPayload = {
             conversationHistory: conversationHistoryString,
-            // image: imageBase64, // Renamed from screenshot to match backend
+            // image: imageBase64,
             model: 'gpt-4.1',
             temperature: 0.7,
             maxTokens: 4096,
-            stream: true, // We always want streaming for this client
-            promptType: 'WHAT_SHOULD_I_SAY_NEXT'
+            stream: true,
+            promptType: options.promptType,
+            dealContext: dealContext
         };
 
-        // Note: userPrompt is not sent to backend for now
         // if (userPrompt && userPrompt.trim().length > 0) {
-        //     requestPayload.userPrompt = userPrompt.trim();
-        //     console.log(`📝 Including user prompt in request`);
+        //     requestPayload.userPrompt = userPrompt;
         // }
 
-        // 4. Send data to backend
         console.log('🚀 Sending data to backend for processing...');
+        console.log('📋 Prompt type:', requestPayload.promptType);
         console.log('📋 Conversation history format:', typeof requestPayload.conversationHistory);
         console.log('📋 Conversation history preview:', requestPayload.conversationHistory.substring(0, 200) + '...');
+        console.log('📋 Deal context:', dealContext ? 'Present' : 'Not available');
         
-        // Use IPC to call the authenticated API client in main process
         const { ipcRenderer } = window.require('electron');
         
-        // Request streaming chat completion through IPC
         await ipcRenderer.invoke('chat-completion-start', requestPayload);
         let fullResponse = '';
         
