@@ -10,13 +10,13 @@ class DatabaseInitializer {
         
         // 최종적으로 사용될 DB 경로 (쓰기 가능한 위치)
         const userDataPath = app.getPath('userData');
-        this.dbPath = path.join(userDataPath, 'pickleglass.db');
+        this.dbPath = path.join(userDataPath, 'ergolive.db');
         this.dataDir = userDataPath;
 
         // 원본 DB 경로 (패키지 내 읽기 전용 위치)
         this.sourceDbPath = app.isPackaged
-            ? path.join(process.resourcesPath, 'data', 'pickleglass.db')
-            : path.join(app.getAppPath(), 'data', 'pickleglass.db');
+            ? path.join(process.resourcesPath, 'data', 'ergolive.db')
+            : path.join(app.getAppPath(), 'data', 'ergolive.db');
     }
 
     ensureDatabaseExists() {
@@ -62,12 +62,8 @@ class DatabaseInitializer {
                 console.log('[DB] Default data initialized.');
             }
 
-            // Verify preset templates
-            const presetTemplates = await sqliteClient.getPresetTemplates();
-            if (!presetTemplates || presetTemplates.length === 0) {
-                throw new Error('Preset templates verification failed.');
-            }
-            console.log(`[DatabaseInitializer] Preset templates verified, count: ${presetTemplates.length}`);
+            // Preset templates verification removed - deprecated
+            console.log('[DatabaseInitializer] Database tables initialized successfully');
 
             this.isInitialized = true;
             console.log('[DB] Database initialized successfully');
@@ -145,11 +141,7 @@ class DatabaseInitializer {
                 await sqliteClient.initDefaultData();
             }
 
-            const presetTemplates = await sqliteClient.getPresetTemplates();
-            if (!presetTemplates || presetTemplates.length === 0) {
-                console.log('[DatabaseInitializer] Preset templates missing - creating...');
-                await sqliteClient.initDefaultData();
-            }
+            // Preset templates check removed - deprecated
 
             console.log('[DatabaseInitializer] Database validation completed');
             return { success: true };

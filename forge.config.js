@@ -10,13 +10,13 @@ const packagerConfig = {
             '**/node_modules/{sharp,@img}/**/*'
     },
     extraResource: ['./src/assets/SystemAudioDump'],
-    name: 'Glass',
+    name: 'Ergo Live',
     icon: 'src/assets/logo',
-    appBundleId: 'com.pickle.glass',
+    appBundleId: 'com.ergo.live',
     protocols: [
         {
-            name: 'PickleGlass Protocol',
-            schemes: ['pickleglass']
+            name: 'ErgoLive Protocol',
+            schemes: ['ergolive']
         }
     ],
     asarUnpack: [
@@ -54,9 +54,9 @@ module.exports = {
         {
             name: '@electron-forge/maker-squirrel',
             config: {
-                name: 'pickle-glass',
-                productName: 'Glass',
-                shortcutName: 'Glass',
+                name: 'ergo-live',
+                productName: 'Ergo Live',
+                shortcutName: 'Ergo Live',
                 createDesktopShortcut: true,
                 createStartMenuShortcut: true,
             },

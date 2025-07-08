@@ -248,9 +248,9 @@ export class OnboardingView extends LitElement {
         return html`
             <div class="slide slide-1 ${this.currentSlide === 0 ? 'active' : ''}">
                 <div class="emoji">👋</div>
-                <div class="slide-title">Welcome to Pickle Glass!</div>
+                <div class="slide-title">Welcome to Ergo Live!</div>
                 <div class="slide-content">
-                    Pickle Glass hears what you hear and sees what you see, then generates AI-powered suggestions without any user input needed.
+                    Ergo Live hears what you hear and sees what you see, then generates AI-powered suggestions without any user input needed.
                 </div>
             </div>
         `;
@@ -317,7 +317,7 @@ export class OnboardingView extends LitElement {
                 <div class="emoji">🎉</div>
                 <div class="slide-title">You're All Set!</div>
                 <div class="slide-content">
-                    Pickle Glass is completely free to use. Just sign in and start getting AI-powered assistance in your interviews
+                    Ergo Live is completely free to use. Just sign in and start getting AI-powered assistance in your interviews
                     and meetings!
                 </div>
             </div>

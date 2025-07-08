@@ -39,7 +39,7 @@ function createMainWindows() {
             deeplink = new Deeplink({
                 app,
                 mainWindow: headerWindow,     
-                protocol: 'pickleglass',
+                protocol: 'ergolive',
                 isDev: !app.isPackaged,
                 debugLogging: true
             });
@@ -188,7 +188,7 @@ app.on('open-url', (event, url) => {
 });
 
 // Ensure app can handle the protocol
-app.setAsDefaultProtocolClient('pickleglass');
+app.setAsDefaultProtocolClient('ergolive');
 
 function setupGeneralIpcHandlers() {
     ipcMain.handle('open-external', async (event, url) => {
@@ -811,8 +811,8 @@ function initAutoUpdater() {
 
         autoUpdater.setFeedURL({
             provider: 'github',
-            owner: 'pickle-com',
-            repo: 'glass',
+            owner: 'felipebergerman',
+            repo: 'ergo-live',
         });
 
         // Immediately check for updates & notify
@@ -844,7 +844,7 @@ function initAutoUpdater() {
                 type: 'info',
                 buttons: ['Install now', 'Install on next launch'],
                 title: 'Update Available',
-                message: 'A new version of Glass is ready to be installed.',
+                message: 'A new version of Ergo Live is ready to be installed.',
                 defaultId: 0,
                 cancelId: 1
             };

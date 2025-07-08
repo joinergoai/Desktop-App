@@ -1062,7 +1062,7 @@ export class AskView extends LitElement {
                 break;
         }
         
-        window.pickleGlass.sendMessage(question, { promptType }).catch(error => {
+        window.ergoLive.sendMessage(question, { promptType }).catch(error => {
             console.error('Error processing assistant question:', error);
             this.isLoading = false;
             this.isStreaming = false;
@@ -1159,7 +1159,7 @@ export class AskView extends LitElement {
         this.renderContent();
 
         // User-typed questions always use the 'ASK' prompt type
-        window.pickleGlass.sendMessage(text, { promptType: 'ASK' }).catch(error => {
+        window.ergoLive.sendMessage(text, { promptType: 'ASK' }).catch(error => {
             console.error('Error sending text:', error);
             this.isLoading = false;
             this.isStreaming = false;

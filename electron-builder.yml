@@ -1,19 +1,16 @@
 # electron-builder.yml
 
-# The unique application ID
-appId: com.pickle.glass
-
-# The user-facing application name
-productName: Glass
+# Common configuration
+productName: Ergo Live
+appId: com.ergo.live
 directories:
-  output: out
-  buildResources: src/assets
-
-# Publish configuration for GitHub releases
+  buildResources: build
+  output: dist
+  app: .
 publish:
   provider: github
-  owner: pickle-com
-  repo: glass
+  owner: felipebergerman
+  repo: ergo-live
   releaseType: draft
 
 # List of files to be included in the app package
@@ -32,7 +29,7 @@ files:
 extraResources:
   - from: src/assets/SystemAudioDump
     to: SystemAudioDump
-  - from: pickleglass_web/out
+  - from: ergo_web/out
     to: out
 
 # macOS specific configuration

@@ -36,8 +36,8 @@ let lastScreenshotBase64 = null; // Store the latest screenshot
 
 let realtimeConversationHistory = [];
 
-const PICKLE_GLASS_SYSTEM_PROMPT = `<core_identity>
-You are Pickle-Glass, developed and created by Pickle-Glass, and you are the user's live-meeting co-pilot.
+const ERGO_LIVE_SYSTEM_PROMPT = `<core_identity>
+You are Ergo Live, developed and created by Ergo, and you are the user's live-meeting co-pilot.
 </core_identity>
 
 <objective>
@@ -345,7 +345,7 @@ let aecProcessor = new SimpleAEC();
 const isLinux = process.platform === 'linux';
 const isMacOS = process.platform === 'darwin';
 
-window.pickleGlass = window.pickleGlass || {};
+window.ergoLive = window.ergoLive || {};
 
 let tokenTracker = {
     tokens: [],
@@ -428,8 +428,8 @@ setInterval(() => {
     tokenTracker.trackAudioTokens();
 }, 2000);
 
-function pickleGlassElement() {
-    return document.getElementById('pickle-glass');
+function ergoLiveElement() {
+    return document.getElementById('ergo-live');
 }
 
 function convertFloat32ToInt16(float32Array) {
@@ -472,7 +472,7 @@ ipcRenderer.on('system-audio-data', (event, { data }) => {
 // Listen for status updates
 ipcRenderer.on('update-status', (event, status) => {
     console.log('Status update:', status);
-    pickleGlass.e().setStatus(status);
+    ergoLive.e().setStatus(status);
 });
 
 // Listen for real-time STT updates
@@ -498,8 +498,8 @@ ipcRenderer.on('stt-update', (event, data) => {
         console.log(`📋 Latest text: ${conversationText}`);
     }
 
-    if (pickleGlass.e() && typeof pickleGlass.e().updateRealtimeTranscription === 'function') {
-        pickleGlass.e().updateRealtimeTranscription({
+    if (ergoLive.e() && typeof ergoLive.e().updateRealtimeTranscription === 'function') {
+        ergoLive.e().updateRealtimeTranscription({
             speaker,
             text,
             isFinal,
@@ -523,13 +523,13 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
         const sttSuccess = await ipcRenderer.invoke('initialize-stt-sessions', 'en');
         if (!sttSuccess) {
             console.error('Failed to initialize STT sessions');
-            pickleGlass.e().setStatus('STT initialization failed');
+            ergoLive.e().setStatus('STT initialization failed');
             return;
         }
         console.log('STT sessions initialized successfully');
     } catch (error) {
         console.error('Error initializing STT sessions:', error);
-        pickleGlass.e().setStatus('STT initialization error');
+        ergoLive.e().setStatus('STT initialization error');
         return;
     }
 
@@ -651,7 +651,7 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
         }
     } catch (err) {
         console.error('Error starting capture:', err);
-        pickleGlass.e().setStatus('error');
+        ergoLive.e().setStatus('error');
     }
 }
 
@@ -1094,7 +1094,7 @@ ipcRenderer.on('save-conversation-session', async (event, data) => {
 // Initialize conversation storage when renderer loads
 initConversationStorage().catch(console.error);
 
-window.pickleGlass = {
+window.ergoLive = {
     startCapture,
     stopCapture,
     sendMessage,
@@ -1104,7 +1104,7 @@ window.pickleGlass = {
     initConversationStorage,
     isLinux: isLinux,
     isMacOS: isMacOS,
-    e: pickleGlassElement,
+    e: ergoLiveElement,
 };
 
 // -------------------------------------------------------

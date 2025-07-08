@@ -84,6 +84,12 @@ function createFeatureWindows(header) {
     listen.setContentProtection(isContentProtectionOn);
     listen.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true});
     listen.loadFile(path.join(__dirname,'../app/content.html'),{query:{view:'listen'}});
+    
+    // Wait for the window to be ready
+    listen.webContents.once('did-finish-load', () => {
+        console.log('[WindowManager] Listen window loaded');
+    });
+    
     windowPool.set('listen', listen);
 
     // ask
@@ -91,7 +97,17 @@ function createFeatureWindows(header) {
     ask.setContentProtection(isContentProtectionOn);
     ask.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true});
     ask.loadFile(path.join(__dirname,'../app/content.html'),{query:{view:'ask'}});
-    ask.on('blur',()=>ask.webContents.send('window-blur'));
+    
+    // Wait for the window to be ready
+    ask.webContents.once('did-finish-load', () => {
+        console.log('[WindowManager] Ask window loaded');
+    });
+    
+    ask.on('blur',()=>{
+        if (ask.webContents && !ask.webContents.isDestroyed()) {
+            ask.webContents.send('window-blur');
+        }
+    });
     windowPool.set('ask', ask);
 
     // settings
@@ -100,6 +116,12 @@ function createFeatureWindows(header) {
     settings.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true});
     settings.loadFile(path.join(__dirname,'../app/content.html'),{query:{view:'customize'}})
         .catch(console.error);
+    
+    // Wait for the window to be ready
+    settings.webContents.once('did-finish-load', () => {
+        console.log('[WindowManager] Settings window loaded');
+    });
+    
     windowPool.set('settings', settings);
 }
 
@@ -893,12 +915,12 @@ function toggleAllWindowsVisibility() {
 
 function ensureDataDirectories() {
     const homeDir = os.homedir();
-    const pickleGlassDir = path.join(homeDir, '.pickle-glass');
-    const dataDir = path.join(pickleGlassDir, 'data');
+    const ergoLiveDir = path.join(homeDir, '.ergo-live');
+    const dataDir = path.join(ergoLiveDir, 'data');
     const imageDir = path.join(dataDir, 'image');
     const audioDir = path.join(dataDir, 'audio');
 
-    [pickleGlassDir, dataDir, imageDir, audioDir].forEach(dir => {
+    [ergoLiveDir, dataDir, imageDir, audioDir].forEach(dir => {
         if (!fs.existsSync(dir)) {
             fs.mkdirSync(dir, { recursive: true });
         }
@@ -1014,17 +1036,17 @@ function createWindows() {
                     const hasResponse = await askWindow.webContents.executeJavaScript(`
                         (() => {
                             try {
-                                // PickleGlassApp의 Shadow DOM 내부로 접근
-                                const pickleApp = document.querySelector('pickle-glass-app');
-                                if (!pickleApp || !pickleApp.shadowRoot) {
-                                    console.log('PickleGlassApp not found');
+                                // ErgoLiveApp의 Shadow DOM 내부로 접근
+                                const ergoApp = document.querySelector('ergo-live-app');
+                                if (!ergoApp || !ergoApp.shadowRoot) {
+                                    console.log('ErgoLiveApp not found');
                                     return false;
                                 }
                                 
-                                // PickleGlassApp의 shadowRoot 내부에서 ask-view 찾기
-                                const askView = pickleApp.shadowRoot.querySelector('ask-view');
+                                // ErgoLiveApp의 shadowRoot 내부에서 ask-view 찾기
+                                const askView = ergoApp.shadowRoot.querySelector('ask-view');
                                 if (!askView) {
-                                    console.log('AskView not found in PickleGlassApp shadow DOM');
+                                    console.log('AskView not found in ErgoLiveApp shadow DOM');
                                     return false;
                                 }
                                 
@@ -1058,11 +1080,15 @@ function createWindows() {
                     console.log(`[WindowManager] Ask window visible, hasResponse: ${hasResponse}`);
 
                     if (hasResponse) {
-                        askWindow.webContents.send('toggle-text-input');
-                        console.log('[WindowManager] Sent toggle-text-input command');
+                        if (askWindow.webContents && !askWindow.webContents.isDestroyed()) {
+                            askWindow.webContents.send('toggle-text-input');
+                            console.log('[WindowManager] Sent toggle-text-input command');
+                        }
                     } else {
                         console.log('[WindowManager] No response found, closing window');
-                        askWindow.webContents.send('window-hide-animation');
+                        if (askWindow.webContents && !askWindow.webContents.isDestroyed()) {
+                            askWindow.webContents.send('window-hide-animation');
+                        }
 
                         setTimeout(() => {
                             if (!askWindow.isDestroyed()) {
@@ -1081,7 +1107,9 @@ function createWindows() {
                 } catch (error) {
                     console.error('[WindowManager] Error checking Ask window state:', error);
                     console.log('[WindowManager] Falling back to toggle text input');
-                    askWindow.webContents.send('toggle-text-input');
+                    if (askWindow.webContents && !askWindow.webContents.isDestroyed()) {
+                        askWindow.webContents.send('toggle-text-input');
+                    }
                 }
             } else {
                 console.log('[WindowManager] Showing hidden Ask window');
@@ -1091,8 +1119,10 @@ function createWindows() {
                 
                 askWindow.show();
                 updateLayout();
-                askWindow.webContents.send('window-show-animation');
-                askWindow.webContents.send('window-did-show');
+                if (askWindow.webContents && !askWindow.webContents.isDestroyed()) {
+                    askWindow.webContents.send('window-show-animation');
+                    askWindow.webContents.send('window-did-show');
+                }
             }
         } else {
             const windowToToggle = windowPool.get(featureName);
@@ -1105,9 +1135,13 @@ function createWindows() {
 
                 if (windowToToggle.isVisible()) {
                     if (featureName === 'settings') {
-                        windowToToggle.webContents.send('settings-window-hide-animation');
+                        if (windowToToggle.webContents && !windowToToggle.webContents.isDestroyed()) {
+                            windowToToggle.webContents.send('settings-window-hide-animation');
+                        }
                     } else {
-                        windowToToggle.webContents.send('window-hide-animation');
+                        if (windowToToggle.webContents && !windowToToggle.webContents.isDestroyed()) {
+                            windowToToggle.webContents.send('window-hide-animation');
+                        }
                     }
 
                     setTimeout(() => {
@@ -1122,10 +1156,31 @@ function createWindows() {
                         updateLayout();
 
                         if (featureName === 'listen') {
-                            windowToToggle.webContents.send('start-listening-session');
+                            // Wait for the window to be ready before sending the message
+                            if (windowToToggle.webContents && !windowToToggle.webContents.isDestroyed()) {
+                                if (windowToToggle.webContents.isLoading()) {
+                                    windowToToggle.webContents.once('did-finish-load', () => {
+                                        if (!windowToToggle.isDestroyed() && windowToToggle.webContents && !windowToToggle.webContents.isDestroyed()) {
+                                            windowToToggle.webContents.send('start-listening-session');
+                                        }
+                                    });
+                                } else {
+                                    windowToToggle.webContents.send('start-listening-session');
+                                }
+                            }
                         }
 
-                        windowToToggle.webContents.send('window-show-animation');
+                        if (windowToToggle.webContents && !windowToToggle.webContents.isDestroyed()) {
+                            if (windowToToggle.webContents.isLoading()) {
+                                windowToToggle.webContents.once('did-finish-load', () => {
+                                    if (!windowToToggle.isDestroyed() && windowToToggle.webContents && !windowToToggle.webContents.isDestroyed()) {
+                                        windowToToggle.webContents.send('window-show-animation');
+                                    }
+                                });
+                            } else {
+                                windowToToggle.webContents.send('window-show-animation');
+                            }
+                        }
                     } catch (e) {
                         console.error('Error showing window:', e);
                     }
@@ -1152,7 +1207,9 @@ function createWindows() {
                 askWindow.show();
             }
             
-            askWindow.webContents.send('receive-question-from-assistant', question);
+            if (askWindow.webContents && !askWindow.webContents.isDestroyed()) {
+                askWindow.webContents.send('receive-question-from-assistant', question);
+            }
             
             // Update layout to position both windows
             updateLayout();
@@ -1212,10 +1269,12 @@ function loadAndRegisterShortcuts() {
     const sendToRenderer = (channel, ...args) => {
         windowPool.forEach(win => {
             try {
-                if (win && !win.isDestroyed()) {
+                if (win && !win.isDestroyed() && win.webContents && !win.webContents.isDestroyed()) {
                     win.webContents.send(channel, ...args);
                 }
-            } catch (e) {}
+            } catch (e) {
+                console.error('[WindowManager] Error in sendToRenderer:', e);
+            }
         });
     };
 
@@ -1262,7 +1321,7 @@ function setupIpcHandlers() {
     // 1. 스트리밍 데이터 조각(chunk)을 받아서 ask 창으로 전달
     ipcMain.on('ask-response-chunk', (event, { token }) => {
         const askWindow = windowPool.get('ask');
-        if (askWindow && !askWindow.isDestroyed()) {
+        if (askWindow && !askWindow.isDestroyed() && askWindow.webContents && !askWindow.webContents.isDestroyed()) {
             // renderer.js가 보낸 토큰을 AskView.js로 그대로 전달합니다.
             askWindow.webContents.send('ask-response-chunk', { token });
         }
@@ -1271,7 +1330,7 @@ function setupIpcHandlers() {
     // 2. 스트리밍 종료 신호를 받아서 ask 창으로 전달
     ipcMain.on('ask-response-stream-end', () => {
         const askWindow = windowPool.get('ask');
-        if (askWindow && !askWindow.isDestroyed()) {
+        if (askWindow && !askWindow.isDestroyed() && askWindow.webContents && !askWindow.webContents.isDestroyed()) {
             askWindow.webContents.send('ask-response-stream-end');
         }
     });
@@ -1379,7 +1438,9 @@ function setupIpcHandlers() {
         const askWindow = windowPool.get('ask');
         if (askWindow && !askWindow.isDestroyed()) {
             console.log('📤 Main: Sending hide-text-input to ask window');
-            askWindow.webContents.send('hide-text-input');
+            if (askWindow.webContents && !askWindow.webContents.isDestroyed()) {
+                askWindow.webContents.send('hide-text-input');
+            }
             return { success: true };
         }
         return { success: false };
@@ -1435,12 +1496,16 @@ function setupIpcHandlers() {
                 if (user) {
                     console.log('[WindowManager] Notifying windows about authenticated user after state change');
                     windowPool.forEach(win => {
-                        if (win && !win.isDestroyed()) {
-                            win.webContents.send('user-changed', {
-                                uid: user.uid,
-                                display_name: user.display_name,
-                                email: user.email
-                            });
+                        if (win && !win.isDestroyed() && win.webContents && !win.webContents.isDestroyed()) {
+                            try {
+                                win.webContents.send('user-changed', {
+                                    uid: user.uid,
+                                    display_name: user.display_name,
+                                    email: user.email
+                                });
+                            } catch (e) {
+                                console.error('[WindowManager] Error sending user-changed event:', e);
+                            }
                         }
                     });
                 }
@@ -1473,10 +1538,12 @@ function setupIpcHandlers() {
                     const sendToRenderer = (channel, ...args) => {
                         windowPool.forEach(win => {
                             try {
-                                if (win && !win.isDestroyed()) {
+                                if (win && !win.isDestroyed() && win.webContents && !win.webContents.isDestroyed()) {
                                     win.webContents.send(channel, ...args);
                                 }
-                            } catch (e) {}
+                            } catch (e) {
+                                console.error('[WindowManager] Error in sendToRenderer:', e);
+                            }
                         });
                     };
 
@@ -1531,7 +1598,7 @@ function setupIpcHandlers() {
     });
 
     ipcMain.handle('open-login-page', () => {
-        const webUrl = process.env.pickleglass_WEB_URL || 'http://localhost:3000';
+        const webUrl = process.env.ERGO_WEB_URL || 'http://localhost:3000';
         const personalizeUrl = `${webUrl}/personalize?desktop=true`;
         shell.openExternal(personalizeUrl);
         console.log('Opening personalization page:', personalizeUrl);
@@ -1634,7 +1701,9 @@ function setupIpcHandlers() {
         if (window && !window.isDestroyed()) {
             console.log(`[WindowManager] Force closing window: ${windowName}`);
 
-            window.webContents.send('window-hide-animation');
+            if (window.webContents && !window.webContents.isDestroyed()) {
+                window.webContents.send('window-hide-animation');
+            }
 
             setTimeout(() => {
                 if (!window.isDestroyed()) {

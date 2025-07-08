@@ -6,7 +6,7 @@ import { AskView } from '../features/ask/AskView.js';
 
 import '../features/listen/renderer.js';
 
-export class PickleGlassApp extends LitElement {
+export class ErgoLiveApp extends LitElement {
     static styles = css`
         :host {
             display: block;
@@ -150,8 +150,8 @@ export class PickleGlassApp extends LitElement {
             }
         }
 
-        if (window.pickleGlass) {
-            window.pickleGlass.startCapture(this.selectedScreenshotInterval, this.selectedImageQuality);
+        if (window.ergoLive) {
+            window.ergoLive.startCapture(this.selectedScreenshotInterval, this.selectedImageQuality);
         }
 
         this.currentResponseIndex = -1;
@@ -191,8 +191,8 @@ export class PickleGlassApp extends LitElement {
     }
 
     async handleSendText(message) {
-        if (window.pickleGlass) {
-            const result = await window.pickleGlass.sendTextMessage(message);
+        if (window.ergoLive) {
+            const result = await window.ergoLive.sendTextMessage(message);
 
             if (!result.success) {
                 console.error('Failed to send message:', result.error);
@@ -204,13 +204,13 @@ export class PickleGlassApp extends LitElement {
     }
 
     // updateOutline(outline) {
-    //     console.log('📝 PickleGlassApp updateOutline:', outline);
+    //     console.log('📝 ErgoLiveApp updateOutline:', outline);
     //     this.outlines = [...outline];
     //     this.requestUpdate();
     // }
 
     // updateAnalysisRequests(requests) {
-    //     console.log('📝 PickleGlassApp updateAnalysisRequests:', requests);
+    //     console.log('📝 ErgoLiveApp updateAnalysisRequests:', requests);
     //     this.analysisRequests = [...requests];
     //     this.requestUpdate();
     // }
@@ -255,4 +255,4 @@ export class PickleGlassApp extends LitElement {
     }
 }
 
-customElements.define('pickle-glass-app', PickleGlassApp);
+customElements.define('ergo-live-app', ErgoLiveApp);

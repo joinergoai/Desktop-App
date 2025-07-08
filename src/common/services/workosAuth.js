@@ -71,8 +71,8 @@ class WorkOSAuth {
             const response = await fetch(`${backendUrl}/api/desktop/auth/refresh`, {
                 method: 'POST',
                 headers: { 
-                    'Content-Type': 'application/json',
-                    'User-Agent': 'PickleGlass/1.0'
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'User-Agent': 'ErgoLive/1.0'
                 },
                 body: JSON.stringify({
                     refresh_token: tokens.workos_refresh_token
@@ -113,7 +113,7 @@ class WorkOSAuth {
             
             const headers = {
                 'Authorization': `Bearer ${accessToken}`,
-                'User-Agent': 'PickleGlass/1.0',
+                'User-Agent': 'ErgoLive/1.0',
                 ...options.headers
             };
 

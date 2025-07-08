@@ -77,7 +77,7 @@ function analyzeAudioBuffer(buffer, label = 'Audio') {
 
 function saveDebugAudio(buffer, type, timestamp = Date.now()) {
     const homeDir = require('os').homedir();
-    const debugDir = path.join(homeDir, '.pickle-glass', 'debug');
+    const debugDir = path.join(homeDir, '.ergo-live', 'debug');
 
     if (!fs.existsSync(debugDir)) {
         fs.mkdirSync(debugDir, { recursive: true });
