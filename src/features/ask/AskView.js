@@ -173,24 +173,7 @@ export class AskView extends LitElement {
             overflow: hidden;
         }
 
-        .response-label.animating {
-            animation: fadeInOut 0.3s ease-in-out;
-        }
 
-        @keyframes fadeInOut {
-            0% {
-                opacity: 1;
-                transform: translateY(0);
-            }
-            50% {
-                opacity: 0;
-                transform: translateY(-10px);
-            }
-            100% {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
 
         .header-right {
             display: flex;
@@ -720,8 +703,7 @@ export class AskView extends LitElement {
             this.currentQuestion = question;
             this.isLoading = true;
             this.showTextInput = false;
-            this.headerText = 'analyzing screen...';
-            this.startHeaderAnimation();
+            this.headerText = 'AI Response';
             this.requestUpdate();
 
             this.processAssistantQuestion(question);
@@ -820,7 +802,6 @@ export class AskView extends LitElement {
             const container = this.shadowRoot.getElementById('responseContainer');
             if (container) container.innerHTML = '';
             this.headerText = 'AI Response';
-            this.headerAnimating = false;
             this.requestUpdate();
         }
         this.accumulatedResponse += token;
@@ -956,6 +937,11 @@ export class AskView extends LitElement {
     handleToggleTextInput() {
         this.showTextInput = !this.showTextInput;
         this.requestUpdate();
+        
+        // Delay window height adjustment to account for CSS transition (0.3s)
+        setTimeout(() => {
+            this.adjustWindowHeight();
+        }, 350);
     }
 
     requestWindowResize(targetHeight) {
@@ -1055,7 +1041,7 @@ export class AskView extends LitElement {
         this.isStreaming = false;
         this.currentResponse = '';
         this.accumulatedResponse = '';
-        this.startHeaderAnimation();
+        this.headerText = 'AI Response';
         this.requestUpdate();
         this.renderContent();
 
@@ -1072,7 +1058,7 @@ export class AskView extends LitElement {
                 promptType = 'EXPLAIN';
                 break;
             default:
-                promptType = 'ASK'; // General purpose ask for user-typed questions
+                promptType = 'ASK';
                 break;
         }
         
@@ -1168,7 +1154,7 @@ export class AskView extends LitElement {
         this.isStreaming = false;
         this.currentResponse = '';
         this.accumulatedResponse = '';
-        this.startHeaderAnimation();
+        this.headerText = 'AI Response';
         this.requestUpdate();
         this.renderContent();
 
@@ -1257,7 +1243,7 @@ export class AskView extends LitElement {
                                 <path d="M8 12l2 2 4-4" />
                             </svg>
                         </div>
-                        <span class="response-label ${this.headerAnimating ? 'animating' : ''}">${this.headerText}</span>
+                        <span class="response-label">${this.headerText}</span>
                     </div>
                     <div class="header-right">
                         <span class="question-text">${this.getTruncatedQuestion(this.currentQuestion)}</span>
@@ -1299,7 +1285,7 @@ export class AskView extends LitElement {
                     <input
                         type="text"
                         id="textInput"
-                        placeholder="Ask about your screen or audio"
+                        placeholder="Ask a general question"
                         @keydown=${this.handleTextKeydown}
                         @focus=${this.handleInputFocus}
                         @blur=${this.handleInputBlur}

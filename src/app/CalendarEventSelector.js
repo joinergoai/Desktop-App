@@ -5,7 +5,9 @@ export class CalendarEventSelector extends LitElement {
         events: { type: Array },
         selectedEvent: { type: Object },
         loading: { type: Boolean },
-        error: { type: String }
+        error: { type: String },
+        dealLookupResult: { type: Object },
+        dealLookupStatus: { type: Boolean }
     };
 
     static styles = css`
@@ -246,6 +248,41 @@ export class CalendarEventSelector extends LitElement {
         .events-container::-webkit-scrollbar-thumb:hover {
             background: rgba(255, 255, 255, 0.15);
         }
+
+        .deal-status {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-size: 11px;
+            font-weight: 500;
+            color: white;
+            z-index: 100;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+
+        .deal-status.visible {
+            opacity: 1;
+        }
+
+        .deal-status.success {
+            color: #10b981;
+        }
+
+        .deal-status.neutral {
+            color: #6b7280;
+        }
+
+        .deal-status.error {
+            color: #ef4444;
+        }
     `;
 
     constructor() {
@@ -254,6 +291,8 @@ export class CalendarEventSelector extends LitElement {
         this.selectedEvent = null;
         this.loading = false;
         this.error = null;
+        this.dealLookupResult = null;
+        this.dealLookupStatus = false;
         this.dragState = null;
         this.wasJustDragged = false;
 
@@ -388,6 +427,18 @@ export class CalendarEventSelector extends LitElement {
         this.selectedEvent = this.selectedEvent?.title === event.title ? null : event;
     }
 
+    setDealLookupResult(result) {
+        this.dealLookupResult = result;
+        this.dealLookupStatus = true;
+        this.requestUpdate();
+        
+        // Auto-hide after 3.5 seconds
+        setTimeout(() => {
+            this.dealLookupStatus = false;
+            this.requestUpdate();
+        }, 3500);
+    }
+
     handleContinue() {
         if (!this.selectedEvent || this.wasJustDragged) return;
         
@@ -453,6 +504,12 @@ export class CalendarEventSelector extends LitElement {
                         </div>
                     `)}
                 </div>
+
+                ${this.dealLookupStatus && this.dealLookupResult ? html`
+                    <div class="deal-status ${this.dealLookupStatus ? 'visible' : ''} ${this.dealLookupResult.success && this.dealLookupResult.dealFound ? 'success' : this.dealLookupResult.success && !this.dealLookupResult.dealFound ? 'neutral' : 'error'}">
+                        ${this.dealLookupResult.success && this.dealLookupResult.dealFound ? '✓ Deal context found' : this.dealLookupResult.success && !this.dealLookupResult.dealFound ? 'No deal context' : '✗ Context lookup failed'}
+                    </div>
+                ` : ''}
 
                 <div class="actions">
                     <button class="skip-btn" @click=${this.handleSkip}>Skip</button>

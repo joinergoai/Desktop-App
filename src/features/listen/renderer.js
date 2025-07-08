@@ -901,7 +901,7 @@ async function sendMessage(userPrompt, options = {}) {
     try {
         console.log(`🤖 Processing message request...`);
 
-        let imageBase64 = null;
+        // let imageBase64 = null;
         // try {
         //     imageBase64 = await getCurrentScreenshot();
         //     if (imageBase64) {
@@ -941,9 +941,10 @@ async function sendMessage(userPrompt, options = {}) {
             dealContext: dealContext
         };
 
-        // if (userPrompt && userPrompt.trim().length > 0) {
-        //     requestPayload.userPrompt = userPrompt;
-        // }
+        if (userPrompt && userPrompt.trim().length > 0) {
+            requestPayload.userPrompt = userPrompt;
+            console.log('📋 User prompt:', requestPayload.userPrompt);
+        }
 
         console.log('🚀 Sending data to backend for processing...');
         console.log('📋 Prompt type:', requestPayload.promptType);

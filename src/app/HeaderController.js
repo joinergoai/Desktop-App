@@ -160,6 +160,8 @@ class HeaderTransitionManager {
             return;
         }
 
+        let dealInfo = null;
+        
         try {
             // Show loading state on calendar selector
             if (this.calendarEventSelector) {
@@ -169,17 +171,28 @@ class HeaderTransitionManager {
 
             // Perform CRM lookup via IPC
             const { ipcRenderer } = window.require('electron');
-            const dealInfo = await ipcRenderer.invoke('perform-crm-lookup', calendarEvent);
+            dealInfo = await ipcRenderer.invoke('perform-crm-lookup', calendarEvent);
             
             console.log('[HeaderController] CRM lookup complete, deal info:', dealInfo);
 
         } catch (error) {
             console.error('[HeaderController] Error during CRM lookup:', error);
+            dealInfo = {
+                success: false,
+                dealFound: false,
+                dealInfo: null,
+                email: null
+            };
         } finally {
             // Remove loading state
             if (this.calendarEventSelector) {
                 this.calendarEventSelector.loading = false;
                 this.calendarEventSelector.requestUpdate();
+                
+                // Show deal lookup result status
+                if (dealInfo) {
+                    this.calendarEventSelector.setDealLookupResult(dealInfo);
+                }
             }
         }
     }

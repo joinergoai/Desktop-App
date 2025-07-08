@@ -28,8 +28,8 @@ export class AssistantView extends LitElement {
             display: flex;
             align-items: center;
             gap: 6px;
-            padding: 6px 12px;
-            height: 16px;
+            padding: 8px 12px;
+            min-height: 32px;
             background: rgba(0, 0, 0, 0.6);
             border: 1px solid rgba(255, 255, 255, 0.1);
             border-radius: 20px;
@@ -40,6 +40,7 @@ export class AssistantView extends LitElement {
             white-space: nowrap;
             backdrop-filter: blur(10px);
             -webkit-backdrop-filter: blur(10px);
+            box-sizing: border-box;
         }
 
         .action-pill::after {
@@ -69,12 +70,18 @@ export class AssistantView extends LitElement {
             line-height: 1;
             filter: brightness(1.2);
             flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            height: 15px;
         }
 
         .action-title {
-            font-size: 11px;
+            font-size: 12px;
             font-weight: 500;
             color: rgba(255, 255, 255, 0.9);
+            line-height: 1.2;
+            display: flex;
+            align-items: center;
         }
     `;
 

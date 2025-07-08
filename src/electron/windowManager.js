@@ -87,7 +87,7 @@ function createFeatureWindows(header) {
     windowPool.set('listen', listen);
 
     // ask
-    const ask = new BrowserWindow({ ...commonChildOptions, width:400, height:233, minWidth:350, maxWidth:500, minHeight:120, maxHeight:233 });
+    const ask = new BrowserWindow({ ...commonChildOptions, width:410, height:233, minWidth:350, maxWidth:550, minHeight:120, maxHeight:233 });
     ask.setContentProtection(isContentProtectionOn);
     ask.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true});
     ask.loadFile(path.join(__dirname,'../app/content.html'),{query:{view:'ask'}});
@@ -239,8 +239,8 @@ class WindowLayoutManager {
             const combinedWidth = listenBounds.width + PAD + askBounds.width;
 
             /* ② 모든 X 좌표를 상대좌표로 계산 */
-            // Left-align listen window with header
-            let listenXRel = headerBounds.x - workAreaX;
+            // Left-align listen window with header, shifted 20px to the left
+            let listenXRel = headerBounds.x - workAreaX - 30;
             let askXRel = listenXRel + listenBounds.width + PAD;
 
             /* 좌우 화면 여백 클램프 – 역시 상대좌표로 */
@@ -289,12 +289,12 @@ class WindowLayoutManager {
             const winBounds = askVisible ? askBounds : listenBounds;
 
             /* X, Y 둘 다 상대좌표로 계산 */
-            // For listen window (assistant pills), left-align with header
+            // For listen window (assistant pills), left-align with header shifted left
             // For ask window, keep centered
             let xRel;
             if (win === listen) {
-                // Left-align with header
-                xRel = headerBounds.x - workAreaX;
+                // Left-align with header, shifted 20px to the left
+                xRel = headerBounds.x - workAreaX - 30;
             } else {
                 // Center under header (for ask window)
                 xRel = headerCenterXRel - winBounds.width / 2;
@@ -1072,7 +1072,6 @@ function createWindows() {
                                 const listenWindow = windowPool.get('listen');
                                 if (listenWindow && !listenWindow.isDestroyed()) {
                                     listenWindow.show();
-                                    listenWindow.webContents.send('window-show-animation');
                                 }
                                 
                                 updateLayout();
@@ -1087,11 +1086,8 @@ function createWindows() {
             } else {
                 console.log('[WindowManager] Showing hidden Ask window');
                 
-                // Hide the listen window (pills) when ask opens
-                const listenWindow = windowPool.get('listen');
-                if (listenWindow && !listenWindow.isDestroyed() && listenWindow.isVisible()) {
-                    listenWindow.hide();
-                }
+                // Keep the listen window (pills) visible when ask opens
+                // The layout manager will position them side by side
                 
                 askWindow.show();
                 updateLayout();
@@ -1148,10 +1144,8 @@ function createWindows() {
         if (askWindow && !askWindow.isDestroyed()) {
             console.log('📨 Main process: Sending question to AskView', question);
             
-            // Hide the listen window (pills) when ask opens
-            if (listenWindow && !listenWindow.isDestroyed() && listenWindow.isVisible()) {
-                listenWindow.hide();
-            }
+            // Keep the listen window (pills) visible when ask opens
+            // The layout manager will position them side by side
             
             // Show ask window if hidden
             if (!askWindow.isVisible()) {
@@ -1160,7 +1154,7 @@ function createWindows() {
             
             askWindow.webContents.send('receive-question-from-assistant', question);
             
-            // Update layout to center ask window
+            // Update layout to position both windows
             updateLayout();
             
             return { success: true };
@@ -1651,7 +1645,6 @@ function setupIpcHandlers() {
                         const listenWindow = windowPool.get('listen');
                         if (listenWindow && !listenWindow.isDestroyed()) {
                             listenWindow.show();
-                            listenWindow.webContents.send('window-show-animation');
                         }
                     }
                     
