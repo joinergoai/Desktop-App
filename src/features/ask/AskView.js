@@ -936,6 +936,19 @@ export class AskView extends LitElement {
 
     handleToggleTextInput() {
         this.showTextInput = !this.showTextInput;
+        
+        // If we're showing the text input, clear the previous response completely
+        if (this.showTextInput) {
+            this.currentResponse = '';
+            this.currentQuestion = '';
+            this.isLoading = false;
+            this.isStreaming = false;
+            this.headerText = 'AI Response';
+            this.accumulatedResponse = '';
+            this.lineCopyState = {};
+            this.renderContent();
+        }
+        
         this.requestUpdate();
         
         // Delay window height adjustment to account for CSS transition (0.3s)
