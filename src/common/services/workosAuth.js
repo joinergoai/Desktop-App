@@ -72,7 +72,7 @@ class WorkOSAuth {
             const response = await fetch(`${backendUrl}/api/desktop/auth/refresh`, {
                 method: 'POST',
                 headers: { 
-                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Content-Type': 'application/json',
                     'User-Agent': 'ErgoLive/1.0'
                 },
                 body: JSON.stringify({
