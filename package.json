@@ -1,7 +1,7 @@
 {
     "name": "ergo-live",
     "productName": "Ergo Live",
-    "version": "0.1.1",
+    "version": "0.1.2",
     "description": "AI-powered live meeting assistant",
     "main": "src/index.js",
     "scripts": {
