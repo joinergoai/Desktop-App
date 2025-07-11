@@ -813,8 +813,8 @@ function initAutoUpdater() {
 
         autoUpdater.setFeedURL({
             provider: 'github',
-            owner: 'felipebergerman',
-            repo: 'ergo-live',
+            owner: 'joinergoai',
+            repo: 'Desktop-App',
         });
 
         // Immediately check for updates & notify

@@ -9,8 +9,8 @@ directories:
   app: .
 publish:
   provider: github
-  owner: felipebergerman
-  repo: ergo-live
+  owner: joinergoai
+  repo: Desktop-App
   releaseType: draft
 
 # ASAR configuration
