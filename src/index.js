@@ -18,11 +18,9 @@ const databaseInitializer = require('./common/services/databaseInitializer');
 const dataService = require('./common/services/dataService');
 const apiClient = require('./common/services/apiClient');
 const workosAuth = require('./common/services/workosAuth');
-const path = require('node:path');
 const { Deeplink } = require('electron-deeplink');
 const fetch = require('node-fetch');
 const { autoUpdater } = require('electron-updater');
-const { env } = require('node:process');
 const config = require('./common/config/config');
 
 let deeplink = null; // Initialize as null
