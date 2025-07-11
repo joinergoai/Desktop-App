@@ -1,4 +1,6 @@
 const workosAuth = require('./workosAuth');
+const dataService = require('./dataService');
+const config = require('../config/config');
 
 /**
  * Service to fetch temporary Deepgram API tokens
@@ -33,7 +35,7 @@ class DeepgramTokenService {
 
     async _doFetch() {
         try {
-            const backendUrl = process.env.BACKEND_URL;
+            const backendUrl = config.get('backendUrl');
             if (!backendUrl) {
                 throw new Error('BACKEND_URL not configured');
             }

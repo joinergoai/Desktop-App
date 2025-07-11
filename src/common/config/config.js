@@ -12,6 +12,8 @@ class Config {
             
             webUrl: process.env.ERGO_WEB_URL || 'http://localhost:3000',
             
+            backendUrl: process.env.BACKEND_URL || 'https://dcpygugvo2dow.cloudfront.net',
+            
             enableJWT: false,
             fallbackToHeaderAuth: false,
             
@@ -46,6 +48,11 @@ class Config {
         if (process.env.ERGO_WEB_URL) {
             this.config.webUrl = process.env.ERGO_WEB_URL;
             console.log(`[Config] Web URL from env: ${this.config.webUrl}`);
+        }
+        
+        if (process.env.BACKEND_URL) {
+            this.config.backendUrl = process.env.BACKEND_URL;
+            console.log(`[Config] Backend URL from env: ${this.config.backendUrl}`);
         }
         
         if (process.env.ERGO_API_TIMEOUT) {

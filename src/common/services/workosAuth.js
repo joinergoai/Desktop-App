@@ -1,4 +1,5 @@
 const dataService = require('./dataService');
+const config = require('../config/config');
 
 /**
  * WorkOS Authentication Service
@@ -67,7 +68,7 @@ class WorkOSAuth {
 
         try {
             // Use your backend proxy for token refresh
-            const backendUrl = process.env.BACKEND_URL;
+            const backendUrl = config.get('backendUrl');
             const response = await fetch(`${backendUrl}/api/desktop/auth/refresh`, {
                 method: 'POST',
                 headers: { 

@@ -13,10 +13,20 @@ publish:
   repo: ergo-live
   releaseType: draft
 
+# ASAR configuration
+asar: true
+asarUnpack:
+  - "**/*.node"
+  - "**/*.dylib"
+  - "**/node_modules/sharp/**/*"
+  - "**/node_modules/@img/**/*"
+
 # List of files to be included in the app package
 files:
   - src
   - LICENSE
+  - public
+  - package.json
   - "!**/*.ts"
   - "!**/*.map"
   - "!node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}"
@@ -24,17 +34,28 @@ files:
   - "!node_modules/*.d.ts"
   - "!node_modules/.bin"
   - "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}"
+  - "!node_modules/electron/**"
+  - "!**/node_modules/electron/**"
 
 # Additional resources to be copied into the app's resources directory
 extraResources:
   - from: src/assets/SystemAudioDump
     to: SystemAudioDump
-  - from: ergo_web/out
-    to: out
 
 # macOS specific configuration
 mac:
   # The application category type
   category: public.app-category.utilities
   # Path to the .icns icon file
-  icon: src/assets/logo.icns 
+  icon: src/assets/logo.icns
+  # Enable hardened runtime for notarization
+  hardenedRuntime: true
+  # Gatekeeper assessment for distribution
+  gatekeeperAssess: false
+  # Entitlements file for signing
+  entitlements: entitlements.plist
+  entitlementsInherit: entitlements.plist
+  # Force signing even if it appears to be signed already
+  forceCodeSigning: true
+  # Enable notarization (requires env vars: APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID)
+  notarize: true 

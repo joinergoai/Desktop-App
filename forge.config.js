@@ -38,11 +38,11 @@ if (process.env.APPLE_IDENTITY) {
 }
 
 // Only add osxNotarize if we have the required credentials
-if (process.env.APPLE_ID && process.env.APPLE_PASSWORD && process.env.APPLE_TEAM_ID) {
+if (process.env.APPLE_ID && process.env.APPLE_ID_PASSWORD && process.env.APPLE_TEAM_ID) {
     packagerConfig.osxNotarize = {
         tool: 'notarytool',
         appleId: process.env.APPLE_ID,
-        appleIdPassword: process.env.APPLE_PASSWORD,
+        appleIdPassword: process.env.APPLE_ID_PASSWORD,
         teamId: process.env.APPLE_TEAM_ID
     };
 }
@@ -77,7 +77,7 @@ module.exports = {
     hooks: {
         afterSign: async (context, forgeConfig, platform, arch, appPath) => {
             // Only notarize if we have the credentials
-            if (process.env.APPLE_ID && process.env.APPLE_PASSWORD) {
+            if (process.env.APPLE_ID && process.env.APPLE_ID_PASSWORD) {
                 await notarizeApp(context, forgeConfig, platform, arch, appPath);
             }
         },

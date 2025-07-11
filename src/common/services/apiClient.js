@@ -4,7 +4,7 @@ const workosAuth = require('./workosAuth');
 
 class APIClient {
     constructor() {
-        this.baseURL = process.env.BACKEND_URL;
+        this.baseURL = config.get('backendUrl');
         this.client = axios.create({
             baseURL: this.baseURL,
             timeout: config.get('apiTimeout'),

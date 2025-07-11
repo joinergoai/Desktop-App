@@ -23,6 +23,7 @@ const { Deeplink } = require('electron-deeplink');
 const fetch = require('node-fetch');
 const { autoUpdater } = require('electron-updater');
 const { env } = require('node:process');
+const config = require('./common/config/config');
 
 let deeplink = null; // Initialize as null
 let pendingDeepLinkUrl = null; // Store any deep link that arrives before initialization
@@ -295,7 +296,8 @@ function setupGeneralIpcHandlers() {
     ipcMain.handle('start-workos-auth', async () => {
         try {
             // Get auth URL from your backend service
-            const backendUrl = process.env.BACKEND_URL;
+            const backendUrl = config.get('backendUrl');
+            console.log(`[WorkOS Auth] Backend URL: ${backendUrl}/api/desktop/auth/init`);
             const response = await fetch(`${backendUrl}/api/desktop/auth/init`);
             
             if (!response.ok) {
@@ -491,11 +493,11 @@ function setupGeneralIpcHandlers() {
     });
 
     ipcMain.handle('get-api-url', () => {
-        return process.env.BACKEND_URL;
+        return config.get('backendUrl');
     });
 
     ipcMain.on('get-api-url-sync', (event) => {
-        event.returnValue = process.env.BACKEND_URL;
+        event.returnValue = config.get('backendUrl');
     });
 
     ipcMain.handle('get-database-status', async () => {
@@ -671,7 +673,7 @@ async function handleWorkOSAuthCallback(params) {
         console.log('[WorkOS Auth] Timestamp:', new Date().toISOString());
         
         // Exchange code through your backend proxy
-        const backendUrl = process.env.BACKEND_URL;
+        const backendUrl = config.get('backendUrl');
         const response = await fetch(`${backendUrl}/api/desktop/auth/token`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
