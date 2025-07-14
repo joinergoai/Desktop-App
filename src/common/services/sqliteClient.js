@@ -46,7 +46,8 @@ class SQLiteClient {
                   workos_access_token  TEXT,
                   workos_refresh_token TEXT,
                   workos_expires_at    INTEGER,
-                  workos_user_id       TEXT
+                  workos_user_id       TEXT,
+                  window_preferences TEXT
                 );
 
                 CREATE TABLE IF NOT EXISTS sessions (
@@ -113,7 +114,31 @@ class SQLiteClient {
                     return reject(err);
                 }
                 console.log('All tables are ready.');
-                this.initDefaultData().then(resolve).catch(reject);
+                
+                this.db.get("PRAGMA table_info(users)", (err, row) => {
+                    this.db.all("PRAGMA table_info(users)", (err, rows) => {
+                        if (err) {
+                            console.error('Failed to get table info:', err);
+                            this.initDefaultData().then(resolve).catch(reject);
+                            return;
+                        }
+                        
+                        const hasWindowPrefs = rows.some(col => col.name === 'window_preferences');
+                        if (!hasWindowPrefs) {
+                            console.log('Adding window_preferences column to existing users table...');
+                            this.db.run("ALTER TABLE users ADD COLUMN window_preferences TEXT", (alterErr) => {
+                                if (alterErr) {
+                                    console.error('Failed to add window_preferences column:', alterErr);
+                                } else {
+                                    console.log('Successfully added window_preferences column');
+                                }
+                                this.initDefaultData().then(resolve).catch(reject);
+                            });
+                        } else {
+                            this.initDefaultData().then(resolve).catch(reject);
+                        }
+                    });
+                });
             });
         });
     }
@@ -254,6 +279,53 @@ class SQLiteClient {
                     } else {
                         console.log(`SQLite: WorkOS tokens saved for user ${uid}.`);
                         resolve({ changes: this.changes });
+                    }
+                }
+            );
+        });
+    }
+
+    async saveWindowPreferences(uid, preferences) {
+        if (!uid) {
+            return Promise.reject(new Error('User ID is required to save window preferences'));
+        }
+        return new Promise((resolve, reject) => {
+            const prefsJson = JSON.stringify(preferences);
+            this.db.run(
+                'UPDATE users SET window_preferences = ? WHERE uid = ?',
+                [prefsJson, uid],
+                function(err) {
+                    if (err) {
+                        console.error('SQLite: Failed to save window preferences:', err);
+                        reject(err);
+                    } else {
+                        console.log(`SQLite: Window preferences saved for user ${uid}.`);
+                        resolve({ changes: this.changes });
+                    }
+                }
+            );
+        });
+    }
+
+    async getWindowPreferences(uid) {
+        if (!uid) {
+            return Promise.reject(new Error('User ID is required to get window preferences'));
+        }
+        return new Promise((resolve, reject) => {
+            this.db.get(
+                'SELECT window_preferences FROM users WHERE uid = ?',
+                [uid],
+                (err, row) => {
+                    if (err) {
+                        reject(err);
+                    } else {
+                        try {
+                            const prefs = row && row.window_preferences ? JSON.parse(row.window_preferences) : null;
+                            resolve(prefs);
+                        } catch (parseErr) {
+                            console.error('Failed to parse window preferences:', parseErr);
+                            resolve(null);
+                        }
                     }
                 }
             );

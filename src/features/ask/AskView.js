@@ -13,6 +13,8 @@ export class AskView extends LitElement {
         headerText: { type: String },
         headerAnimating: { type: Boolean },
         isStreaming: { type: Boolean },
+        windowWidth: { type: Number },
+        windowHeight: { type: Number },
     };
 
     static styles = css`
@@ -107,7 +109,7 @@ export class AskView extends LitElement {
             backdrop-filter: blur(1px);
             box-sizing: border-box;
             position: relative;
-            overflow: hidden;
+            overflow: visible;
         }
 
         .ask-container::before {
@@ -124,6 +126,7 @@ export class AskView extends LitElement {
             border-radius: 12px;
             filter: blur(10px);
             z-index: -1;
+            pointer-events: none;
         }
 
         .response-header {
@@ -134,6 +137,8 @@ export class AskView extends LitElement {
             background: transparent;
             border-bottom: 1px solid rgba(255, 255, 255, 0.1);
             flex-shrink: 0;
+            border-radius: 12px 12px 0 0;
+            overflow: hidden;
         }
 
         .response-header.hidden {
@@ -271,12 +276,14 @@ export class AskView extends LitElement {
             flex: 1;
             padding: 12px;
             padding-left: 32px;
+            padding-right: 24px;
             overflow-y: auto;
+            overflow-x: hidden;
             font-size: 13px;
             line-height: 1.5;
             background: transparent;
             min-height: 60px;
-            max-height: 167px;
+            max-height: calc(var(--window-height, 233px) - 80px); /* Dynamic based on window height */
             position: relative;
             transition: max-height 0.3s ease;
             scrollbar-gutter: stable;
@@ -284,6 +291,10 @@ export class AskView extends LitElement {
 
         .response-container.hidden {
             display: none;
+        }
+
+        .response-container.no-input {
+            border-radius: 0 0 12px 12px;
         }
 
         .response-container::-webkit-scrollbar {
@@ -405,6 +416,8 @@ export class AskView extends LitElement {
             flex-shrink: 0;
             transition: all 0.3s ease-in-out;
             transform-origin: bottom;
+            border-radius: 0 0 12px 12px; /* Add rounded corners to bottom */
+            overflow: hidden; /* Ensure input content doesn't overflow */
         }
 
         .text-input-container.hidden {
@@ -417,6 +430,7 @@ export class AskView extends LitElement {
 
         .text-input-container.no-response {
             border-top: none;
+            border-radius: 12px; /* Full rounded corners when no response */
         }
 
         #textInput {
@@ -507,6 +521,51 @@ export class AskView extends LitElement {
             color: rgba(255, 255, 255, 0.5);
             font-size: 14px;
         }
+
+        .resize-handle {
+            position: absolute;
+            bottom: 4px; /* Moved inward from edge */
+            right: 4px; /* Moved inward from edge */
+            width: 20px;
+            height: 20px;
+            cursor: nwse-resize;
+            background: transparent;
+            z-index: 20; /* Increased z-index to stay above scrollbar */
+            opacity: 0;
+            transition: opacity 0.2s ease;
+            border-radius: 0 0 8px 0; /* Round the bottom-right corner to match container */
+        }
+
+        .ask-container:hover .resize-handle {
+            opacity: 1;
+        }
+
+        .resize-handle::before {
+            content: '';
+            position: absolute;
+            bottom: 2px; /* Adjusted for inset position */
+            right: 2px; /* Adjusted for inset position */
+            width: 10px;
+            height: 10px;
+            border-right: 2px solid rgba(255, 255, 255, 0.4);
+            border-bottom: 2px solid rgba(255, 255, 255, 0.4);
+        }
+
+        .resize-handle::after {
+            content: '';
+            position: absolute;
+            bottom: 2px; /* Adjusted for inset position */
+            right: 6px; /* Adjusted for inset position */
+            width: 6px;
+            height: 6px;
+            border-right: 2px solid rgba(255, 255, 255, 0.4);
+            border-bottom: 2px solid rgba(255, 255, 255, 0.4);
+        }
+
+        .resize-handle:hover::before,
+        .resize-handle:hover::after {
+            border-color: rgba(255, 255, 255, 0.7);
+        }
     `;
 
     constructor() {
@@ -520,6 +579,8 @@ export class AskView extends LitElement {
         this.headerAnimating = false;
         this.isStreaming = false;
         this.accumulatedResponse = '';
+        this.windowWidth = 410; // Default width
+        this.windowHeight = 233; // Default max height
 
         this.marked = null;
         this.hljs = null;
@@ -538,6 +599,16 @@ export class AskView extends LitElement {
         this.handleEscKey = this.handleEscKey.bind(this);
         this.handleDocumentClick = this.handleDocumentClick.bind(this);
         this.handleWindowBlur = this.handleWindowBlur.bind(this);
+
+        // Resize handling
+        this.handleResizeStart = this.handleResizeStart.bind(this);
+        this.handleResizeMove = this.handleResizeMove.bind(this);
+        this.handleResizeEnd = this.handleResizeEnd.bind(this);
+        this.isResizing = false;
+        this.resizeStartX = 0;
+        this.resizeStartY = 0;
+        this.resizeStartWidth = 0;
+        this.resizeStartHeight = 0;
 
         this.loadLibraries();
 
@@ -644,6 +715,80 @@ export class AskView extends LitElement {
         });
     }
 
+    // Resize handling methods
+    handleResizeStart(e) {
+        e.preventDefault();
+        this.isResizing = true;
+        this.resizeStartX = e.clientX;
+        this.resizeStartY = e.clientY;
+        
+        if (window.require) {
+            const { ipcRenderer } = window.require('electron');
+            ipcRenderer.invoke('get-window-bounds', 'ask').then(bounds => {
+                this.resizeStartWidth = bounds.width;
+                this.resizeStartHeight = bounds.height;
+            });
+        }
+
+        document.addEventListener('mousemove', this.handleResizeMove);
+        document.addEventListener('mouseup', this.handleResizeEnd);
+        
+        // Prevent text selection during resize
+        document.body.style.userSelect = 'none';
+        document.body.style.cursor = 'nwse-resize';
+    }
+
+    handleResizeMove(e) {
+        if (!this.isResizing) return;
+
+        const deltaX = e.clientX - this.resizeStartX;
+        const deltaY = e.clientY - this.resizeStartY;
+
+        // Calculate new dimensions
+        const newWidth = Math.max(350, Math.min(750, this.resizeStartWidth + deltaX));
+        const newHeight = Math.max(120, Math.min(400, this.resizeStartHeight + deltaY));
+
+        // Update window size
+        if (window.require) {
+            const { ipcRenderer } = window.require('electron');
+            ipcRenderer.invoke('resize-ask-window', { width: newWidth, height: newHeight });
+        }
+
+        // Store dimensions for persistence
+        this.windowWidth = newWidth;
+        this.windowHeight = newHeight;
+        
+        // Update CSS variable for immediate visual feedback
+        this.requestUpdate();
+    }
+
+    handleResizeEnd(e) {
+        this.isResizing = false;
+        
+        document.removeEventListener('mousemove', this.handleResizeMove);
+        document.removeEventListener('mouseup', this.handleResizeEnd);
+        
+        // Restore cursor
+        document.body.style.userSelect = '';
+        document.body.style.cursor = '';
+
+        // Save the resized dimensions to database
+        if (this.windowWidth && this.windowHeight && window.require) {
+            const { ipcRenderer } = window.require('electron');
+            ipcRenderer.invoke('resize-ask-window', { 
+                width: this.windowWidth, 
+                height: this.windowHeight,
+                save: true  // Save to database
+            }).then(result => {
+                if (result.success) {
+                    console.log('Window dimensions saved to database');
+                } else {
+                    console.error('Failed to save window dimensions');
+                }
+            });
+        }
+    }
+
     parseMarkdown(text) {
         if (!text) return '';
 
@@ -676,6 +821,26 @@ export class AskView extends LitElement {
         super.connectedCallback();
 
         console.log('📱 AskView connectedCallback - IPC 이벤트 리스너 설정');
+
+        // Load saved dimensions from database
+        if (window.require) {
+            const { ipcRenderer } = window.require('electron');
+            ipcRenderer.invoke('load-window-preferences', 'ask').then(result => {
+                if (result.success && result.preferences) {
+                    const { width, height } = result.preferences;
+                    this.windowWidth = width || 410;
+                    this.windowHeight = height || 233;
+                    
+                    // Apply saved dimensions to window
+                    ipcRenderer.invoke('resize-ask-window', { width: this.windowWidth, height: this.windowHeight });
+                    console.log('Loaded window dimensions from database:', { width: this.windowWidth, height: this.windowHeight });
+                } else {
+                    console.log('No saved window dimensions found, using defaults');
+                }
+            }).catch(error => {
+                console.error('Failed to load window dimensions:', error);
+            });
+        }
 
         document.addEventListener('click', this.handleDocumentClick, true);
         document.addEventListener('keydown', this.handleEscKey);
@@ -1246,7 +1411,7 @@ export class AskView extends LitElement {
         const hasResponse = this.isLoading || this.currentResponse || this.isStreaming;
 
         return html`
-            <div class="ask-container">
+            <div class="ask-container" style="--window-height: ${this.windowHeight}px">
                 <!-- Response Header -->
                 <div class="response-header ${!hasResponse ? 'hidden' : ''}">
                     <div class="header-left">
@@ -1289,7 +1454,7 @@ export class AskView extends LitElement {
                 </div>
 
                 <!-- Response Container -->
-                <div class="response-container ${!hasResponse ? 'hidden' : ''}" id="responseContainer">
+                <div class="response-container ${!hasResponse ? 'hidden' : ''} ${!this.showTextInput ? 'no-input' : ''}" id="responseContainer">
                     <!-- Content is dynamically generated in updateResponseContent() -->
                 </div>
 
@@ -1304,6 +1469,15 @@ export class AskView extends LitElement {
                         @blur=${this.handleInputBlur}
                     />
                 </div>
+
+                <!-- Resize Handle - Only show when there's a response -->
+                ${hasResponse ? html`
+                    <div 
+                        class="resize-handle" 
+                        @mousedown=${this.handleResizeStart}
+                        title="Resize window"
+                    ></div>
+                ` : ''}
             </div>
         `;
     }
@@ -1321,12 +1495,12 @@ export class AskView extends LitElement {
 
             const headerHeight   = headerEl.classList.contains('hidden') ? 0 : headerEl.offsetHeight;
             // Use the actual visible height (offsetHeight) instead of scrollHeight when content overflows
-            const responseHeight = Math.min(responseEl.scrollHeight, 167); // Respect max-height
+            const responseHeight = Math.min(responseEl.scrollHeight, this.windowHeight - 80); // Respect user-resized max height
             const inputHeight    = (inputEl && !inputEl.classList.contains('hidden')) ? inputEl.offsetHeight : 0;
 
             const idealHeight = headerHeight + responseHeight + inputHeight + 20; // padding
 
-            const targetHeight = Math.min(233, Math.max(120, idealHeight));
+            const targetHeight = Math.min(this.windowHeight, Math.max(120, idealHeight));
 
             const { ipcRenderer } = window.require('electron');
             ipcRenderer.invoke('adjust-window-height', targetHeight);

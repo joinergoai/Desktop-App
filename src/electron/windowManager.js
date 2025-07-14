@@ -93,7 +93,7 @@ function createFeatureWindows(header) {
     windowPool.set('listen', listen);
 
     // ask
-    const ask = new BrowserWindow({ ...commonChildOptions, width:410, height:233, minWidth:350, maxWidth:550, minHeight:120, maxHeight:233 });
+    const ask = new BrowserWindow({ ...commonChildOptions, width:410, height:233, minWidth:350, maxWidth:750, minHeight:120, maxHeight:233 });
     ask.setContentProtection(isContentProtectionOn);
     ask.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true});
     ask.loadFile(path.join(__dirname,'../app/content.html'),{query:{view:'ask'}});
@@ -1720,6 +1720,91 @@ function setupIpcHandlers() {
                     updateLayout();
                 }
             }, 250);
+        }
+    });
+
+    ipcMain.handle('get-window-bounds', (event, windowName) => {
+        const window = windowPool.get(windowName);
+        if (window && !window.isDestroyed()) {
+            return window.getBounds();
+        }
+        return null;
+    });
+
+    ipcMain.handle('resize-ask-window', (event, { width, height, save = false }) => {
+        const askWindow = windowPool.get('ask');
+        if (askWindow && !askWindow.isDestroyed()) {
+            const wasResizable = askWindow.isResizable();
+            
+            // Temporarily make window resizable
+            if (!wasResizable) {
+                askWindow.setResizable(true);
+            }
+            
+            // Apply size constraints
+            const constrainedWidth = Math.max(350, Math.min(750, width));
+            const constrainedHeight = Math.max(120, Math.min(400, height));
+            
+            askWindow.setSize(constrainedWidth, constrainedHeight, false);
+            
+            // Update max height for the window
+            askWindow.setMaximumSize(750, constrainedHeight);
+            
+            // Restore resizable state
+            if (!wasResizable) {
+                askWindow.setResizable(false);
+            }
+            
+            // Update layout to reposition other windows
+            updateLayout();
+            
+            // Save preferences if requested
+            if (save) {
+                const dataService = require('../common/services/dataService');
+                const uid = dataService.currentUserId;
+                
+                if (uid) {
+                    dataService.sqliteClient.getWindowPreferences(uid)
+                        .then(existingPrefs => {
+                            const allPrefs = existingPrefs || {};
+                            allPrefs.ask = { width: constrainedWidth, height: constrainedHeight };
+                            return dataService.sqliteClient.saveWindowPreferences(uid, allPrefs);
+                        })
+                        .then(() => {
+                            console.log(`[WindowManager] Saved ask window preferences for user ${uid}`);
+                        })
+                        .catch(error => {
+                            console.error('[WindowManager] Failed to save window preferences:', error);
+                        });
+                }
+            }
+            
+            return { success: true, width: constrainedWidth, height: constrainedHeight };
+        }
+        return { success: false };
+    });
+
+
+
+    ipcMain.handle('load-window-preferences', async (event, windowName) => {
+        try {
+            const dataService = require('../common/services/dataService');
+            const uid = dataService.currentUserId;
+            
+            if (!uid) {
+                console.log('[WindowManager] No user logged in, cannot load window preferences');
+                return { success: false, error: 'No user logged in' };
+            }
+            
+            const allPrefs = await dataService.sqliteClient.getWindowPreferences(uid) || {};
+            const windowPrefs = allPrefs[windowName] || null;
+            
+            console.log(`[WindowManager] Loaded ${windowName} preferences for user ${uid}:`, windowPrefs);
+            
+            return { success: true, preferences: windowPrefs };
+        } catch (error) {
+            console.error('[WindowManager] Failed to load window preferences:', error);
+            return { success: false, error: error.message };
         }
     });
 
