@@ -351,7 +351,7 @@ export class ApiKeyHeader extends LitElement {
                         <path d="M1 1L9 9M9 1L1 9" stroke="currentColor" stroke-width="1.2" />
                     </svg>
                 </button>
-                <h1 class="title">Welcome to Ergo Copilot</h1>
+                <h1 class="title">Welcome to Ergo Live</h1>
 
                 <div class="form-content">
                     

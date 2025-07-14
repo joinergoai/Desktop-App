@@ -58,7 +58,7 @@ export class CalendarEventSelector extends LitElement {
         h1 {
             font-size: 14px;
             font-weight: 500;
-            margin: 0 0 10px 0;
+            margin: 0 20px 10px 0;
             color: white;
             text-align: center;
         }
@@ -283,6 +283,36 @@ export class CalendarEventSelector extends LitElement {
         .deal-status.error {
             color: #ef4444;
         }
+        
+        .quit-button {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 14px;
+            height: 14px;
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            border-radius: 3px;
+            color: rgba(255, 255, 255, 0.7);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s ease;
+            z-index: 10;
+            font-size: 14px;
+            line-height: 1;
+            padding: 0;
+        }
+
+        .quit-button:hover {
+            background: rgba(255, 255, 255, 0.2);
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        .quit-button:active {
+            transform: scale(0.95);
+        }
     `;
 
     constructor() {
@@ -476,9 +506,25 @@ export class CalendarEventSelector extends LitElement {
         }));
     }
 
+    handleQuit() {
+        if (this.wasJustDragged) return;
+        
+        console.log('Quit clicked');
+        if (window.require) {
+            const { ipcRenderer } = window.require('electron');
+            ipcRenderer.invoke('quit-application');
+        }
+    }
+
     render() {
         return html`
             <div class="container" @mousedown=${this.handleMouseDown}>
+                <button class="quit-button" @click=${this.handleQuit} title="Close application">
+                    <svg width="8" height="8" viewBox="0 0 10 10" fill="currentColor">
+                        <path d="M1 1L9 9M9 1L1 9" stroke="currentColor" stroke-width="1.2" />
+                    </svg>
+                </button>
+                
                 <h1>Select Upcoming Meeting</h1>
 
                 <div class="events-container">

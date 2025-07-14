@@ -118,6 +118,20 @@ class HeaderTransitionManager {
             
             this.transitionToAppHeader(true);
         });
+
+        // Navigate back to calendar selector (e.g., from Stop confirmation)
+        ipcRenderer.on('navigate-to-calendar-selector', async () => {
+            console.log('[HeaderController] Navigating back to calendar selector');
+            this.selectedCalendarEvent = null;
+            await this.transitionToCalendarSelector(true);
+        });
+        
+        // Also listen for DOM events from AppHeader (same window)
+        window.addEventListener('navigate-to-calendar-selector', async () => {
+            console.log('[HeaderController] Navigating back to calendar selector (DOM event)');
+            this.selectedCalendarEvent = null;
+            await this.transitionToCalendarSelector(true);
+        });
     }
 
     _setupCalendarEventHandlers() {
